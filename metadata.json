@@ -1,0 +1,6 @@
+{
+  "name": "GoJapan 24hours",
+  "description": "ប្រព័ន្ធគ្រប់គ្រងការលក់ និងកម្មង់សេវាអ៊ីនធឺណិតជប៉ុន GoJapan 24hours (Japanese ISP & Telecom E-Commerce)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

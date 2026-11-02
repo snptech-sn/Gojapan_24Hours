@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gojapan-50: #fff0f7;
+  --color-gojapan-100: #ffe4f2;
+  --color-gojapan-200: #ffc2e3;
+  --color-gojapan-300: #ff8ec9;
+  --color-gojapan-400: #ff57b2;
+  --color-gojapan-500: #ff259d;
+  --color-gojapan-600: #e60f89;
+  --color-gojapan-700: #c00670;
+  --color-gojapan-800: #990458;
+  --color-gojapan-900: #7a0346;
+  --color-gojapan-950: #4a0028;
+
+  --color-brand-50: #fff0f7;
+  --color-brand-100: #ffe4f2;
+  --color-brand-200: #ffc2e3;
+  --color-brand-300: #ff8ec9;
+  --color-brand-400: #ff57b2;
+  --color-brand-500: #ff259d;
+  --color-brand-600: #e60f89;
+  --color-brand-700: #c00670;
+  --color-brand-800: #990458;
+  --color-brand-900: #7a0346;
+}
+
+@layer base {
+  :root {
+    font-family: 'Plus Jakarta Sans', 'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --brand-primary: #ff259d;
+    --brand-primary-hover: #e60f89;
+    --brand-primary-dark: #c00670;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #ffc2e3;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff8ec9;
+}
+
+/* Print styling for receipts */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
