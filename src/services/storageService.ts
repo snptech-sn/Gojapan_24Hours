@@ -1,5 +1,5 @@
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
-import { AppsScriptConfig, CustomerRecord, Order, OrderStatus, Product, SiteSettings } from '../types';
+import { AppsScriptConfig, CustomerRecord, NewsTickerItem, Order, OrderStatus, Product, SiteSettings } from '../types';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'gojapan_products_v1',
@@ -13,6 +13,37 @@ const STORAGE_KEYS = {
 
 export const ADMIN_SESSION_TIMEOUT_MS = 60 * 1000; // 1 minute security limit
 
+export const DEFAULT_NEWS_ITEMS: NewsTickerItem[] = [
+  {
+    id: 'news-1',
+    km: '⚡ ប្រូម៉ូសិនពិសេស! បញ្ចុះតម្លៃ 10% លើកញ្ចប់ Pocket Wi-Fi 5G & eSIM សម្រាប់ការកម្មង់មុនដំណាច់ខែនេះ',
+    en: '⚡ Limited Time Offer: 10% discount on 5G Pocket Wi-Fi & eSIM packages booked this month!',
+    tagKm: 'ពិសេស',
+    tagEn: 'PROMO'
+  },
+  {
+    id: 'news-2',
+    km: '🚀 សេវាដឹកជញ្ជូនរហ័សទូទាំងប្រទេសជប៉ុន & ទទួលផ្ទាល់នៅព្រលានយន្តហោះ Narita, Haneda, Kansai',
+    en: '🚀 Fast delivery across Japan & Airport pick-up at Narita, Haneda, Kansai',
+    tagKm: 'ដឹកជញ្ជូន',
+    tagEn: 'DELIVERY'
+  },
+  {
+    id: 'news-3',
+    km: '📶 អ៊ីនធឺណិតល្បឿនលឿន 5G & 4G LTE គ្មានដែនកំណត់ លើបណ្តាញ Docomo & SoftBank ធានាគុណភាព ១០០%',
+    en: '📶 Unlimited High-Speed 5G & 4G LTE on Docomo & SoftBank networks - 100% Guaranteed',
+    tagKm: 'ល្បឿនលឿន',
+    tagEn: '5G LTE'
+  },
+  {
+    id: 'news-4',
+    km: '📞 បម្រើសេវាកម្ម ២៤ ម៉ោងជាភាសាខ្មែរ និងជប៉ុន - Hotline / Telegram ឆ្លើយតបរហ័ស',
+    en: '📞 24/7 Customer Care in Khmer & Japanese - Quick Response via Hotline & Telegram',
+    tagKm: '២៤ ម៉ោង',
+    tagEn: '24/7'
+  }
+];
+
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   siteName: 'GoJapan 24hours',
   taglineKm: 'សេវាកម្មអ៊ីនធឺណិត និងទូរគមនាគមន៍ជប៉ុន 24 ម៉ោង',
@@ -20,6 +51,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   announcementKm: '⚡ ប្រូម៉ូសិនពិសេស! បញ្ចុះតម្លៃ 10% លើកញ្ចប់ Pocket Wi-Fi 5G & eSIM សម្រាប់ការកម្មង់មុនដំណាច់ខែនេះ',
   announcementEn: '⚡ Limited Time Offer: 10% discount on 5G Pocket Wi-Fi & eSIM packages booked this month!',
   showAnnouncement: true,
+  announcementsList: DEFAULT_NEWS_ITEMS,
   hotline: '+855 12 889 977 / +81 80 1234 5678',
   telegramUsername: '@gojapan24h',
   facebookUrl: 'https://facebook.com/gojapan24hours',
@@ -569,7 +601,15 @@ export const storageService = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SITE_SETTINGS);
       if (data) {
-        return { ...DEFAULT_SITE_SETTINGS, ...JSON.parse(data) };
+        const parsed = JSON.parse(data);
+        const announcementsList = (parsed.announcementsList && Array.isArray(parsed.announcementsList) && parsed.announcementsList.length > 0)
+          ? parsed.announcementsList
+          : DEFAULT_SITE_SETTINGS.announcementsList;
+        return {
+          ...DEFAULT_SITE_SETTINGS,
+          ...parsed,
+          announcementsList,
+        };
       }
     } catch {
       // fallback
@@ -578,12 +618,27 @@ export const storageService = {
   },
 
   saveSiteSettings(settings: SiteSettings): SiteSettings {
-    localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(settings));
-    return settings;
+    const updatedSettings: SiteSettings = { ...settings };
+    if (updatedSettings.announcementsList && updatedSettings.announcementsList.length > 0) {
+      if (!updatedSettings.announcementKm) {
+        updatedSettings.announcementKm = updatedSettings.announcementsList[0].km;
+      }
+      if (!updatedSettings.announcementEn) {
+        updatedSettings.announcementEn = updatedSettings.announcementsList[0].en;
+      }
+    }
+    localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(updatedSettings));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gojapan_site_settings_updated', { detail: updatedSettings }));
+    }
+    return updatedSettings;
   },
 
   resetSiteSettings(): SiteSettings {
     localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(DEFAULT_SITE_SETTINGS));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gojapan_site_settings_updated', { detail: DEFAULT_SITE_SETTINGS }));
+    }
     return DEFAULT_SITE_SETTINGS;
   },
 

@@ -39,8 +39,10 @@ export default function App() {
   };
 
   const handleSiteSettingsUpdated = (updated: SiteSettings) => {
+    storageService.saveSiteSettings(updated);
     setSiteSettings(updated);
   };
+
 
   // Cart operations
   const handleAddToCart = (product: Product) => {

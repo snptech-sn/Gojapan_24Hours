@@ -30,7 +30,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { storageService } from '../services/storageService';
-import { AppsScriptConfig, CustomerRecord, Language, Order, OrderStatus, Product, ProductCategory, SiteSettings } from '../types';
+import { AppsScriptConfig, CustomerRecord, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, SiteSettings } from '../types';
 import { translations } from '../utils/translations';
 
 interface AdminDashboardProps {
@@ -115,6 +115,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       'mousemove',
       'mousedown',
       'keydown',
+      'keyup',
+      'input',
+      'change',
+      'focus',
       'scroll',
       'wheel',
       'touchstart',
@@ -160,13 +164,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Web App Site Settings state - Full Admin Permission
   const [currentSiteSettings, setCurrentSiteSettings] = useState<SiteSettings>(() => siteSettings || storageService.getSiteSettings());
+  const [isSettingsDirty, setIsSettingsDirty] = useState<boolean>(false);
   const [settingsSavedToast, setSettingsSavedToast] = useState<string | null>(null);
 
   useEffect(() => {
-    if (siteSettings) {
+    if (siteSettings && !isSettingsDirty) {
       setCurrentSiteSettings(siteSettings);
     }
-  }, [siteSettings]);
+  }, [siteSettings, isSettingsDirty]);
 
   // Apps Script Settings state
   const [appsScriptConfig, setAppsScriptConfig] = useState<AppsScriptConfig>(() => storageService.getAppsScriptConfig());
@@ -322,6 +327,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       orderToSave.statusHistory = [...(orderToSave.statusHistory || []), historyItem];
     }
 
+    handleTouchSession();
     const saved = isNewOrder
       ? storageService.createOrder(orderToSave)
       : storageService.updateOrder(orderToSave);
@@ -334,6 +340,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (selectedOrderDetails && selectedOrderDetails.id === saved.id) {
       setSelectedOrderDetails(saved);
     }
+    setSettingsSavedToast(
+      language === 'km'
+        ? `✅ បានរក្សាទុកការកម្មង់លេខ «${saved.id}» ដោយជោគជ័យ!`
+        : `✅ Order ${saved.id} saved successfully!`
+    );
+    setTimeout(() => setSettingsSavedToast(null), 3500);
   };
 
   const handleAddItemToEditingOrder = (productId: string) => {
@@ -430,10 +442,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveCustomer = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCustomer || !editingCustomer.phoneNumber.trim()) return;
+    handleTouchSession();
     storageService.saveCustomer(editingCustomer);
     setCustomers(storageService.getCustomers());
     setIsCustomerModalOpen(false);
     setEditingCustomer(null);
+    setSettingsSavedToast(
+      language === 'km'
+        ? `✅ បានរក្សាទុកព័ត៌មានអតិថិជន «${editingCustomer.customerName}» ដោយជោគជ័យ!`
+        : `✅ Customer ${editingCustomer.customerName} saved successfully!`
+    );
+    setTimeout(() => setSettingsSavedToast(null), 3500);
   };
 
   const handleDeleteCustomer = (phone: string) => {
@@ -444,25 +463,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // WEB APP SETTINGS ACTIONS - FULL ADMIN PERMISSION
-  const handleSaveSiteSettings = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveSiteSettings = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    handleTouchSession();
     const saved = storageService.saveSiteSettings(currentSiteSettings);
     setCurrentSiteSettings(saved);
+    setIsSettingsDirty(false);
     if (onSiteSettingsUpdated) {
       onSiteSettingsUpdated(saved);
     }
     setSettingsSavedToast(
       language === 'km'
-        ? 'បានរក្សាទុកព័ត៌មានទូទៅនៃគេហទំព័រដោយជោគជ័យ!'
-        : 'Web application settings updated successfully!'
+        ? '✅ បានរក្សាទុកព័ត៌មានគេហទំព័រដោយជោគជ័យ! (ព័ត៌មានត្រូវបានកែប្រែភ្លាមៗ)'
+        : '✅ Web application settings updated & saved successfully!'
     );
-    setTimeout(() => setSettingsSavedToast(null), 3500);
+    setTimeout(() => setSettingsSavedToast(null), 4000);
+  };
+
+  const handleAddNewsItem = () => {
+    handleTouchSession();
+    const newItem: NewsTickerItem = {
+      id: `news-${Date.now()}`,
+      km: 'ព័ត៌មានថ្មី...',
+      en: 'New announcement...',
+      tagKm: 'ពិសេស',
+      tagEn: 'NEW',
+    };
+    const updatedList = [...(currentSiteSettings.announcementsList || []), newItem];
+    const updated = {
+      ...currentSiteSettings,
+      announcementsList: updatedList,
+      announcementKm: updatedList[0]?.km || currentSiteSettings.announcementKm,
+      announcementEn: updatedList[0]?.en || currentSiteSettings.announcementEn,
+    };
+    setCurrentSiteSettings(updated);
+    setIsSettingsDirty(true);
+  };
+
+  const handleUpdateNewsItem = (index: number, field: keyof NewsTickerItem, value: string) => {
+    handleTouchSession();
+    const list = [...(currentSiteSettings.announcementsList || [])];
+    if (!list[index]) return;
+    list[index] = { ...list[index], [field]: value };
+    const updated = {
+      ...currentSiteSettings,
+      announcementsList: list,
+      announcementKm: list[0]?.km || currentSiteSettings.announcementKm,
+      announcementEn: list[0]?.en || currentSiteSettings.announcementEn,
+    };
+    setCurrentSiteSettings(updated);
+    setIsSettingsDirty(true);
+  };
+
+  const handleDeleteNewsItem = (index: number) => {
+    handleTouchSession();
+    const list = (currentSiteSettings.announcementsList || []).filter((_, i) => i !== index);
+    const updated = {
+      ...currentSiteSettings,
+      announcementsList: list,
+      announcementKm: list[0]?.km || '',
+      announcementEn: list[0]?.en || '',
+    };
+    setCurrentSiteSettings(updated);
+    setIsSettingsDirty(true);
   };
 
   const handleResetSiteSettings = () => {
     if (window.confirm(language === 'km' ? 'កំណត់ព័ត៌មានគេហទំព័រទៅលំនាំដើម?' : 'Reset website settings to defaults?')) {
       const res = storageService.resetSiteSettings();
       setCurrentSiteSettings(res);
+      setIsSettingsDirty(false);
       if (onSiteSettingsUpdated) {
         onSiteSettingsUpdated(res);
       }
@@ -496,10 +566,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
+    handleTouchSession();
     storageService.saveProduct(editingProduct);
     const updated = storageService.getProducts();
     onProductsUpdated(updated);
     setIsProductModalOpen(false);
+    setSettingsSavedToast(
+      language === 'km'
+        ? `✅ បានរក្សាទុកផលិតផល «${editingProduct.nameKm || editingProduct.sku}» ដោយជោគជ័យ!`
+        : `✅ Product ${editingProduct.sku} saved successfully!`
+    );
+    setTimeout(() => setSettingsSavedToast(null), 3500);
     setEditingProduct(null);
   };
 
@@ -1517,25 +1594,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 6: SITE & WEB APP SETTINGS */}
       {adminTab === 'settings' && (
         <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+          {/* Sticky / Floating Top Action Bar for Settings */}
+          <div className="sticky top-16 z-20 bg-white/95 backdrop-blur-md p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                {language === 'km' ? 'គ្រប់គ្រងព័ត៌មានទូទៅនៃគេហទំព័រ (Site & Web App Settings)' : 'Web App Content & Business Settings'}
-              </h2>
-              <p className="text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  {language === 'km' ? 'គ្រប់គ្រងព័ត៌មានទូទៅនៃគេហទំព័រ (Site Settings)' : 'Web App Content & Business Settings'}
+                </h2>
+                {isSettingsDirty ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                    ⚠️ {language === 'km' ? 'មិនទាន់រក្សាទុក' : 'Unsaved changes'}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <Check className="w-3 h-3" />
+                    <span>{language === 'km' ? 'បានរក្សាទុក' : 'Saved'}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
                 {language === 'km'
-                  ? 'Admin អាចកែប្រែឈ្មោះគេហទំព័រ បដាប្រកាស (Announcement), Hotline, Telegram, Social Links និងអត្ថបទទាំងអស់'
-                  : 'Customize site branding, top announcement banner, support hotline, social URLs, and hero headlines.'}
+                  ? 'Admin អាចកែប្រែព័ត៌មានគេហទំព័រ បដាស្លាយឡើងចុះ (Announcement), Hotline, Telegram និង Social Links'
+                  : 'Customize site branding, sliding news announcements, hotline, telegram, and social URLs.'}
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleResetSiteSettings}
-                className="px-3.5 py-1.5 text-xs text-slate-600 hover:text-slate-900 border border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50"
+                className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 border border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50 transition"
               >
                 {language === 'km' ? 'កំណត់លំនាំដើម' : 'Reset Defaults'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveSiteSettings()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 shadow-sm shadow-gojapan-500/30 rounded-lg cursor-pointer transition active:scale-95"
+              >
+                <Save className="w-4 h-4" />
+                <span>{language === 'km' ? '💾 រក្សាទុកព័ត៌មាន (Save)' : '💾 Save Settings'}</span>
               </button>
             </div>
           </div>
@@ -1562,7 +1661,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="text"
                     required
                     value={currentSiteSettings.siteName}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, siteName: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, siteName: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-gojapan-500 font-bold"
                   />
                 </div>
@@ -1573,7 +1676,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="number"
                     min="0"
                     value={currentSiteSettings.defaultShippingJPY}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, defaultShippingJPY: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, defaultShippingJPY: parseInt(e.target.value) || 0 });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold"
                   />
                 </div>
@@ -1583,7 +1690,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.taglineKm}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, taglineKm: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, taglineKm: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300"
                   />
                 </div>
@@ -1593,49 +1704,140 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.taglineEn}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, taglineEn: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, taglineEn: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Group 2: Announcement Bar */}
+            {/* Group 2: Announcement Bar & Sliding News Ticker (ព័ត៌មានស្លាយឡើងចុះ) */}
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-gojapan-600">
-                  Top Announcement Bar (Banner)
-                </h3>
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={currentSiteSettings.showAnnouncement}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, showAnnouncement: e.target.checked })}
-                    className="rounded border-slate-300 text-gojapan-600 focus:ring-gojapan-500"
-                  />
-                  <span>Show Announcement Bar on Web</span>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Banner Text (Khmer)</label>
-                  <textarea
-                    rows={2}
-                    value={currentSiteSettings.announcementKm}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, announcementKm: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                  />
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-gojapan-600 flex items-center gap-2">
+                    <Globe className="w-4 h-4" />
+                    <span>{language === 'km' ? 'ព័ត៌មាន និងបដាស្លាយឡើងចុះ (Top News Ticker)' : 'Top Announcement & Sliding News Ticker'}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {language === 'km'
+                      ? 'ព័ត៌មានទាំងអស់ខាងក្រោម នឹងបង្ហាញជាចលនាស្លាយឡើងចុះនៅលើកំពូល Website របស់អ្នក'
+                      : 'All items below slide vertically in the top announcement bar of the website.'}
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Banner Text (English)</label>
-                  <textarea
-                    rows={2}
-                    value={currentSiteSettings.announcementEn}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, announcementEn: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                  />
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={currentSiteSettings.showAnnouncement}
+                      onChange={(e) => {
+                        handleTouchSession();
+                        setCurrentSiteSettings({ ...currentSiteSettings, showAnnouncement: e.target.checked });
+                        setIsSettingsDirty(true);
+                      }}
+                      className="rounded border-slate-300 text-gojapan-600 focus:ring-gojapan-500"
+                    />
+                    <span>{language === 'km' ? 'បង្ហាញលើ Web' : 'Show on Web'}</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveSiteSettings()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg cursor-pointer transition shadow-xs"
+                    title={language === 'km' ? 'រក្សាទុកព័ត៌មានស្លាយភ្លាមៗ' : 'Save news items immediately'}
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{language === 'km' ? 'រក្សាទុកព័ត៌មាន' : 'Save News'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Interactive Sliding News Items List */}
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800">
+                    {language === 'km'
+                      ? `បញ្ជីព័ត៌មានស្លាយឡើងចុះ (${currentSiteSettings.announcementsList?.length || 0})`
+                      : `Sliding News Items (${currentSiteSettings.announcementsList?.length || 0})`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddNewsItem}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-gojapan-600 bg-gojapan-50 hover:bg-gojapan-100 rounded-lg border border-gojapan-200 cursor-pointer transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'km' ? '+ បន្ថែមព័ត៌មានស្លាយ' : '+ Add News Item'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {(currentSiteSettings.announcementsList || []).map((item, idx) => (
+                    <div key={item.id || idx} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-gojapan-500 text-white font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            {language === 'km' ? `ព័ត៌មានទី #${idx + 1}` : `News Item #${idx + 1}`}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 font-medium">Tag:</span>
+                          <input
+                            type="text"
+                            placeholder="Tag (e.g. ពិសេស, PROMO)"
+                            value={item.tagKm || ''}
+                            onChange={(e) => handleUpdateNewsItem(idx, 'tagKm', e.target.value)}
+                            className="w-24 px-2 py-1 text-xs rounded border border-slate-300 bg-white font-bold text-gojapan-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteNewsItem(idx)}
+                            disabled={(currentSiteSettings.announcementsList?.length || 0) <= 1}
+                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={language === 'km' ? 'លុបព័ត៌មាននេះ' : 'Delete this item'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            {language === 'km' ? 'ខ្លឹមសារជាភាសាខ្មែរ (Khmer News)' : 'Khmer News Text'}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={item.km || ''}
+                            onChange={(e) => handleUpdateNewsItem(idx, 'km', e.target.value)}
+                            placeholder="បញ្ចូលខ្លឹមសារព័ត៌មានជាភាសាខ្មែរ..."
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs focus:ring-1 focus:ring-gojapan-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            {language === 'km' ? 'ខ្លឹមសារជាភាសាអង់គ្លេស (English News)' : 'English News Text'}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={item.en || ''}
+                            onChange={(e) => handleUpdateNewsItem(idx, 'en', e.target.value)}
+                            placeholder="Enter announcement text in English..."
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs focus:ring-1 focus:ring-gojapan-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1652,7 +1854,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.hotline}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, hotline: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, hotline: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="+855 12 889 977 / +81 80 1234 5678"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono"
                   />
@@ -1663,7 +1869,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.telegramUsername}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, telegramUsername: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, telegramUsername: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="@gojapan24h"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-blue-600"
                   />
@@ -1674,7 +1884,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="email"
                     value={currentSiteSettings.companyEmail}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, companyEmail: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, companyEmail: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="support@gojapan24h.com"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300"
                   />
@@ -1686,7 +1900,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       type="text"
                       value={currentSiteSettings.officeAddressKm}
-                      onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, officeAddressKm: e.target.value })}
+                      onChange={(e) => {
+                        handleTouchSession();
+                        setCurrentSiteSettings({ ...currentSiteSettings, officeAddressKm: e.target.value });
+                        setIsSettingsDirty(true);
+                      }}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300"
                     />
                   </div>
@@ -1696,7 +1914,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       type="text"
                       value={currentSiteSettings.officeAddressEn}
-                      onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, officeAddressEn: e.target.value })}
+                      onChange={(e) => {
+                        handleTouchSession();
+                        setCurrentSiteSettings({ ...currentSiteSettings, officeAddressEn: e.target.value });
+                        setIsSettingsDirty(true);
+                      }}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300"
                     />
                   </div>
@@ -1716,7 +1938,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="url"
                     value={currentSiteSettings.facebookUrl}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, facebookUrl: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, facebookUrl: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="https://facebook.com/gojapan24hours"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-blue-700"
                   />
@@ -1727,7 +1953,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="url"
                     value={currentSiteSettings.youtubeUrl}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, youtubeUrl: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, youtubeUrl: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="https://youtube.com/@gojapan24hours"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-rose-700"
                   />
@@ -1738,7 +1968,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="url"
                     value={currentSiteSettings.lineUrl}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, lineUrl: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, lineUrl: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     placeholder="https://line.me/R/ti/p/@gojapan24h"
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-emerald-700"
                   />
@@ -1758,7 +1992,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.heroHeadlineKm}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, heroHeadlineKm: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, heroHeadlineKm: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-bold"
                   />
                 </div>
@@ -1768,7 +2006,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={currentSiteSettings.heroHeadlineEn}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, heroHeadlineEn: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, heroHeadlineEn: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 font-bold"
                   />
                 </div>
@@ -1778,7 +2020,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <textarea
                     rows={2}
                     value={currentSiteSettings.heroSubheadlineKm}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, heroSubheadlineKm: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, heroSubheadlineKm: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300"
                   />
                 </div>
@@ -1788,7 +2034,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <textarea
                     rows={2}
                     value={currentSiteSettings.heroSubheadlineEn}
-                    onChange={(e) => setCurrentSiteSettings({ ...currentSiteSettings, heroSubheadlineEn: e.target.value })}
+                    onChange={(e) => {
+                      handleTouchSession();
+                      setCurrentSiteSettings({ ...currentSiteSettings, heroSubheadlineEn: e.target.value });
+                      setIsSettingsDirty(true);
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300"
                   />
                 </div>

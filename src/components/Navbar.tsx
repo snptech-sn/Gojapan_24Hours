@@ -33,32 +33,41 @@ export const Navbar: React.FC<NavbarProps> = ({
   const t = translations[language];
 
   // Curated bilingual news items incorporating admin site settings
-  const newsItems = useMemo(() => [
-    {
-      km: siteSettings?.announcementKm || '⚡ ប្រូម៉ូសិនពិសេស! បញ្ចុះតម្លៃ 10% លើកញ្ចប់ Pocket Wi-Fi 5G & eSIM សម្រាប់ការកម្មង់មុនដំណាច់ខែនេះ',
-      en: siteSettings?.announcementEn || '⚡ Limited Time Offer: 10% discount on 5G Pocket Wi-Fi & eSIM packages booked this month!',
-      tagKm: 'ពិសេស',
-      tagEn: 'PROMO'
-    },
-    {
-      km: '🚀 សេវាដឹកជញ្ជូនរហ័សទូទាំងប្រទេសជប៉ុន & ទទួលផ្ទាល់នៅព្រលានយន្តហោះ Narita, Haneda, Kansai',
-      en: '🚀 Fast delivery across Japan & Airport pick-up at Narita, Haneda, Kansai',
-      tagKm: 'ដឹកជញ្ជូន',
-      tagEn: 'DELIVERY'
-    },
-    {
-      km: '📶 អ៊ីនធឺណិតល្បឿនលឿន 5G & 4G LTE គ្មានដែនកំណត់ លើបណ្តាញ Docomo & SoftBank ធានាគុណភាព ១០០%',
-      en: '📶 Unlimited High-Speed 5G & 4G LTE on Docomo & SoftBank networks - 100% Guaranteed',
-      tagKm: 'ល្បឿនលឿន',
-      tagEn: '5G LTE'
-    },
-    {
-      km: `📞 បម្រើសេវាកម្ម ២៤ ម៉ោងជាភាសាខ្មែរ និងជប៉ុន ${siteSettings?.hotline ? `(Hotline: ${siteSettings.hotline})` : ''} - Telegram: @gojapan24h`,
-      en: `📞 24/7 Customer Care in Khmer & Japanese ${siteSettings?.hotline ? `(Hotline: ${siteSettings.hotline})` : ''} - Telegram: @gojapan24h`,
-      tagKm: '២៤ ម៉ោង',
-      tagEn: '24/7'
+  const newsItems = useMemo(() => {
+    if (siteSettings?.announcementsList && siteSettings.announcementsList.length > 0) {
+      return siteSettings.announcementsList;
     }
-  ], [siteSettings?.announcementKm, siteSettings?.announcementEn, siteSettings?.hotline]);
+    return [
+      {
+        id: 'news-1',
+        km: siteSettings?.announcementKm || '⚡ ប្រូម៉ូសិនពិសេស! បញ្ចុះតម្លៃ 10% លើកញ្ចប់ Pocket Wi-Fi 5G & eSIM សម្រាប់ការកម្មង់មុនដំណាច់ខែនេះ',
+        en: siteSettings?.announcementEn || '⚡ Limited Time Offer: 10% discount on 5G Pocket Wi-Fi & eSIM packages booked this month!',
+        tagKm: 'ពិសេស',
+        tagEn: 'PROMO'
+      },
+      {
+        id: 'news-2',
+        km: '🚀 សេវាដឹកជញ្ជូនរហ័សទូទាំងប្រទេសជប៉ុន & ទទួលផ្ទាល់នៅព្រលានយន្តហោះ Narita, Haneda, Kansai',
+        en: '🚀 Fast delivery across Japan & Airport pick-up at Narita, Haneda, Kansai',
+        tagKm: 'ដឹកជញ្ជូន',
+        tagEn: 'DELIVERY'
+      },
+      {
+        id: 'news-3',
+        km: '📶 អ៊ីនធឺណិតល្បឿនលឿន 5G & 4G LTE គ្មានដែនកំណត់ លើបណ្តាញ Docomo & SoftBank ធានាគុណភាព ១០០%',
+        en: '📶 Unlimited High-Speed 5G & 4G LTE on Docomo & SoftBank networks - 100% Guaranteed',
+        tagKm: 'ល្បឿនលឿន',
+        tagEn: '5G LTE'
+      },
+      {
+        id: 'news-4',
+        km: `📞 បម្រើសេវាកម្ម ២៤ ម៉ោងជាភាសាខ្មែរ និងជប៉ុន ${siteSettings?.hotline ? `(Hotline: ${siteSettings.hotline})` : ''} - Telegram: @gojapan24h`,
+        en: `📞 24/7 Customer Care in Khmer & Japanese ${siteSettings?.hotline ? `(Hotline: ${siteSettings.hotline})` : ''} - Telegram: @gojapan24h`,
+        tagKm: '២៤ ម៉ោង',
+        tagEn: '24/7'
+      }
+    ];
+  }, [siteSettings?.announcementsList, siteSettings?.announcementKm, siteSettings?.announcementEn, siteSettings?.hotline]);
 
   // Automated vertical slide timer
   useEffect(() => {

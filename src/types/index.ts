@@ -84,6 +84,14 @@ export interface AppsScriptConfig {
   lastStatus?: string;
 }
 
+export interface NewsTickerItem {
+  id: string;
+  km: string;
+  en: string;
+  tagKm: string;
+  tagEn: string;
+}
+
 export interface SiteSettings {
   siteName: string;
   taglineKm: string;
@@ -91,6 +99,7 @@ export interface SiteSettings {
   announcementKm: string;
   announcementEn: string;
   showAnnouncement: boolean;
+  announcementsList?: NewsTickerItem[];
   hotline: string;
   telegramUsername: string;
   facebookUrl: string;
@@ -105,3 +114,4 @@ export interface SiteSettings {
   officeAddressKm: string;
   officeAddressEn: string;
 }
+
