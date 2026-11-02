@@ -321,12 +321,12 @@ export default function App() {
                       <CheckCircle className="w-5 h-5" />
                     </div>
                     <h3 className="text-sm font-bold text-slate-900">
-                      {language === 'km' ? 'តភ្ជាប់ Google Sheets ដោយស្វ័យប្រវត្តិ' : 'Automated Google Sheets Sync'}
+                      {language === 'km' ? 'ដឹកជញ្ជូនរហ័ស & ធានាគុណភាព ១០០%' : 'Fast Delivery & 100% Quality'}
                     </h3>
                     <p className="text-xs text-slate-600 leading-relaxed">
                       {language === 'km'
-                        ? 'រាល់ការកម្មង់ត្រូវបានបញ្ជូនចូលក្នុង Sheets ទាំង ៤ (Orders, Items, Products, Customers) ភ្លាមៗ។'
-                        : 'Instant real-time data persistence across 4 designated Google Sheets tabs.'}
+                        ? 'សេវាដឹកជញ្ជូនរហ័សទូទាំងប្រទេសជប៉ុន ឬទទួលផ្ទាល់នៅព្រលានយន្តហោះ ព្រមទាំងការធានាគុណភាព ១០០%។'
+                        : 'Nationwide Japan fast shipping or airport pickup with full 100% genuine service quality guarantee.'}
                     </p>
                   </div>
                 </div>

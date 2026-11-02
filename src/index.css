@@ -50,6 +50,37 @@
   background: #ff8ec9;
 }
 
+/* Sliding News Announcement Animations */
+@keyframes slideUpIn {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDownIn {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUpIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-down {
+  animation: slideDownIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Print styling for receipts */
 @media print {
   body * {
@@ -65,3 +96,4 @@
     width: 100%;
   }
 }
+

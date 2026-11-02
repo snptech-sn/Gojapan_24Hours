@@ -99,7 +99,9 @@ export const Hero: React.FC<HeroProps> = ({ language, onGoToOrder, onGoToTrackin
               </div>
               <div>
                 <p className="text-lg sm:text-2xl font-black text-emerald-400 tabular-nums">100%</p>
-                <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">Sheets Sync</p>
+                <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">
+                  {language === 'km' ? 'ធានាគុណភាព' : 'Genuine Quality'}
+                </p>
               </div>
             </div>
           </div>
