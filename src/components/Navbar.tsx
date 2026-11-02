@@ -122,15 +122,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Zone 3: Primary Action & Controls */}
           <div className="flex items-center gap-3 shrink-0">
-            {/* Apps Script Guide Trigger */}
-            <button
-              onClick={onOpenAppsScriptCode}
-              title="Google Apps Script Setup"
-              className="hidden lg:inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors border border-slate-200 cursor-pointer"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Google Sheets API</span>
-            </button>
 
             {/* Language Switcher */}
             <button
@@ -213,16 +204,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             {t.navAdmin}
           </button>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-            <button
-              onClick={onOpenAppsScriptCode}
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              Google Apps Script API Guide
-            </button>
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
             <button
               onClick={() => handleNav('order')}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-gojapan-500 rounded-lg"
+              className="w-full sm:w-auto px-4 py-2 text-center text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg cursor-pointer"
             >
               {t.orderNow}
             </button>
