@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2.5 sm:gap-3 text-left group cursor-pointer"
             >
               <img
-                src="/gojapan-logo.jpg"
+                src="./gojapan-logo.jpg"
                 alt="GoJapan 24hours Logo"
                 className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm ring-1 ring-gojapan-200 transition-transform group-hover:scale-105 shrink-0"
               />

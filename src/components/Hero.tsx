@@ -110,7 +110,7 @@ export const Hero: React.FC<HeroProps> = ({ language, onGoToOrder, onGoToTrackin
               <div className="flex items-center justify-between pb-5 border-b border-slate-800">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/gojapan-logo.jpg"
+                    src="./gojapan-logo.jpg"
                     alt="GoJapan Network"
                     className="w-10 h-10 rounded-xl object-cover ring-2 ring-gojapan-400/40 shrink-0"
                   />

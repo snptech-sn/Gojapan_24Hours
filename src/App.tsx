@@ -392,7 +392,7 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 py-8 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-2.5">
-            <img src="/gojapan-logo.jpg" alt="GoJapan" className="w-6 h-6 rounded-md object-cover ring-1 ring-gojapan-200" />
+            <img src="./gojapan-logo.jpg" alt="GoJapan" className="w-6 h-6 rounded-md object-cover ring-1 ring-gojapan-200" />
             <span className="font-extrabold text-slate-900 text-sm">
               {siteSettings.siteName}
             </span>

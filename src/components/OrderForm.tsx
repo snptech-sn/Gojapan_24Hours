@@ -722,7 +722,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
             <div id="printable-receipt" className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
               <div className="flex items-center justify-between pb-2.5 border-b border-slate-200">
                 <div className="flex items-center gap-2">
-                  <img src="/gojapan-logo.jpg" alt="GoJapan" className="w-8 h-8 rounded-lg object-cover shadow-xs" />
+                  <img src="./gojapan-logo.jpg" alt="GoJapan" className="w-8 h-8 rounded-lg object-cover shadow-xs" />
                   <div>
                     <p className="font-extrabold text-slate-900 leading-tight">GoJapan 24hours</p>
                     <p className="text-[10px] text-slate-500 font-medium">Japanese ISP & Telecom</p>

@@ -602,7 +602,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
         <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 shadow-xl p-8 space-y-6">
           <div className="text-center space-y-2">
-            <img src="/gojapan-logo.jpg" alt="GoJapan Logo" className="w-16 h-16 rounded-2xl mx-auto shadow-md ring-2 ring-gojapan-200 object-cover" />
+            <img src="./gojapan-logo.jpg" alt="GoJapan Logo" className="w-16 h-16 rounded-2xl mx-auto shadow-md ring-2 ring-gojapan-200 object-cover" />
             <h2 className="text-xl font-black text-slate-900 tracking-tight">
               {t.adminLoginTitle}
             </h2>
@@ -683,7 +683,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2"><img src="/gojapan-logo.jpg" alt="GoJapan" className="w-5 h-5 rounded-md object-cover ring-1 ring-gojapan-200" /><span className="text-xs font-bold uppercase tracking-wider text-gojapan-600">Admin Console</span></div>
+            <div className="flex items-center gap-2"><img src="./gojapan-logo.jpg" alt="GoJapan" className="w-5 h-5 rounded-md object-cover ring-1 ring-gojapan-200" /><span className="text-xs font-bold uppercase tracking-wider text-gojapan-600">Admin Console</span></div>
             <span aria-hidden="true" className="text-slate-300">·</span>
             <span className="text-xs text-slate-500">GoJapan 24hours Production System</span>
           </div>
