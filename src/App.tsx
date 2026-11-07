@@ -7,6 +7,7 @@ import { OrderForm } from './components/OrderForm';
 import { OrderTracking } from './components/OrderTracking';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AppsScriptModal } from './components/AppsScriptModal';
+import { FAQSection } from './components/FAQSection';
 import { storageService } from './services/storageService';
 import { Language, Order, OrderItem, Product, ProductCategory, SiteSettings } from './types';
 import { translations } from './utils/translations';
@@ -334,6 +335,16 @@ export default function App() {
                 </div>
               </div>
             </section>
+
+            {/* Frequently Asked Questions (FAQ) Section - Configured by Admin */}
+            <FAQSection
+              siteSettings={siteSettings}
+              language={language}
+              onGoToOrder={() => {
+                setCurrentTab('order');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
           </div>
         )}
 

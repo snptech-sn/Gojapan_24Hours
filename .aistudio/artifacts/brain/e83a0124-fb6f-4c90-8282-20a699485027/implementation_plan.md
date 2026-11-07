@@ -1,28 +1,22 @@
-# GoJapan 24hours - Japanese ISP Services & E-Commerce Platform
+# FAQ Section with Admin Dashboard Configuration
 
-A production-grade web application in Khmer and English for **GoJapan 24hours**, showcasing Japanese high-speed internet packages, pocket Wi-Fi, eSIMs, and network hardware with full customer/agent ordering, live order tracking, an authenticated Admin Dashboard, and automated Google Sheets integration via Google Apps Script Web App API.
+Interactive, bilingual FAQ section situated directly below the "Why Choose Us" section on the GoJapan 24hours storefront, powered by category filtering tabs and full administrative management (CRUD, reordering, and bilingual translation) within the Admin Dashboard.
 
----
-
-### User Review & Critical Decisions
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The user confirmed the following key architectural and domain decisions:
-> - **Product Focus**: Internet Service Provider (ISP) & Telecom hardware: Pocket Wi-Fi, 5G/LTE SIMs & eSIMs, Fiber Optic Home/Office Plans (1Gbps/10Gbps NTT/SoftBank lines), High-Speed Routers, and 24/7 Multilingual Support.
-> - **Currency Display**: Japanese Yen exclusively (¥ / JPY) with formatted tabular figures (`tabular-nums`).
-> - **Google Sheets Integration Strategy**: Pre-configured with copy-ready Google Apps Script (`Code.gs`) generator, step-by-step setup walkthrough, interactive connection tester, and resilient local sync buffering so the app works immediately out of the box and seamlessly streams orders directly into Google Sheets once deployed.
-> - **Language**: Khmer (ភាសាខ្មែរ) as primary default with seamless English (EN) toggle.
+> The following product choices were confirmed during Phase 1 clarification:
+> - **Display Style**: Collapsible accordion with interactive category filter tabs (`All`, `SIM & eSIM`, `Pocket Wi-Fi & Routers`, `Delivery & Returns`, `Payment & Support`).
+> - **Admin Capabilities**: Complete management in Admin Dashboard (create new questions, edit bilingual text, assign categories, reorder items, and delete questions).
+> - **Preloaded Knowledge Base**: Comprehensive telecom set initialized out-of-the-box (SIM APN setup, eSIM QR delivery, Pocket Wi-Fi return envelope policy, airport pickup, and payment methods).
 
 ---
 
 ## 1. Overview & Core Concept
 
-**GoJapan 24hours** delivers a streamlined digital ordering and service management platform for Cambodians and international travelers/expats needing reliable Japanese telecom services (travel pocket Wi-Fi, long-term fiber subscriptions, high-speed SIMs, and enterprise network routers) with 24/7 customer care.
-
-### Target Personas
-1. **Individual Customers**: Travelers, students, and expatriates ordering Pocket Wi-Fi, travel eSIMs, or home fiber connections with delivery across Cambodia or pickup in Japan.
-2. **Sales Agents & Partners**: Registered agents placing bulk orders or client referrals with dedicated Agent IDs, commission tracking, and specialized partner pricing.
-3. **Business Administrators**: Store managers and operations teams managing inventory, tracking orders across fulfillment stages, exporting CSV/Excel reports, and synchronizing with Google Sheets.
+- **What It Does**: Provides travelers, expats, and customers with instant answers to common questions about Japanese telecom services (how to activate travel SIMs, scan eSIM QR codes, return rented pocket Wi-Fi units via postbox, and track deliveries). Administrators can customize, expand, and reorganize these FAQs at any time through the Admin Dashboard settings tab without touching code.
+- **Target Audience**: Cambodian and international travelers, students, and workers traveling to or residing in Japan who require clear technical and logistical guidance in Khmer or English.
+- **Key Value**: Reduces customer support inquiry volume on Telegram and Hotline while building purchase confidence and providing transparency regarding rental return rules.
 
 ---
 
@@ -30,134 +24,143 @@ A production-grade web application in Khmer and English for **GoJapan 24hours**,
 
 ### Key User Flows
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        GoJapan 24hours Navigation                      │
-├─────────────────┬──────────────────┬─────────────────┬─────────────────┤
-│ Catalog & Plans │  Order Form      │  Track Order    │ Admin Portal    │
-│ (Pocket WiFi,   │  (Customer/Agent,│  (Status, Line  │ (Auth, Orders,  │
-│ SIMs, Fiber)    │   Address, JPY)  │   Items, Notes) │  Products, Sync)│
-└────────┬────────┴────────┬─────────┴────────┬────────┴────────┬────────┘
-         ▼                 ▼                  ▼                 ▼
-   Card Details ──► Add to Order Basket ──► Confirmation ──► Google Sheets
-```
+1. **Browsing Customers (Storefront)**:
+   - Scroll past the "Why Choose Us" tier-1 telecom highlights.
+   - Encounter the FAQ section featuring an editorial headline ("សំណួរដែលសួរញឹកញាប់" / "Frequently Asked Questions") and subtitle.
+   - Click category filter tabs (`All`, `SIM & eSIM`, `Pocket Wi-Fi`, `Delivery & Returns`) to narrow down relevant topics with smooth transitions.
+   - Click an accordion item to expand and reveal the detailed answer with clean typography, helpful step-by-step guidance, and relevant icon accents.
+   - Click again to collapse or click another question to smoothly toggle answers.
+   - Switch language between Khmer and English to see instant localized question and answer text.
 
-1. **Catalog Showcase (ទំព័រដើម / Catalog)**:
-   - Hero campaign with key value propositions (High-speed Docomo/SoftBank networks, 24/7 technical support in Khmer & Japanese).
-   - Category filtering (Pocket Wi-Fi, Travel SIM & eSIM, Fiber Internet Plans, Routers & Network Accessories).
-   - Clean product cards with SKU, JPY pricing, carrier network badges, technical specs (Speed, Data allowance, Rental vs Purchase), and quick "Order Now" action.
-2. **Order Placement Form (ទម្រង់បែបបទកម្មង់ទំនិញ)**:
-   - Customer vs. Agent switcher (with optional Agent ID / Partner Code).
-   - Auto-generated Order ID (e.g., `GJ-2026-9482`).
-   - Customer information: Name, Phone, optional Telegram contact (`@username` or phone link for 1-click confirmation).
-   - Full Cambodia address hierarchy: Province/City (ខេត្ត/ក្រុង), District/Khan (ស្រុក/ខណ្ឌ), Commune/Sangkat (ឃុំ/សង្កាត់), Village (ភូមិ), and Street/Home details.
-   - Multi-item order table with quantity steppers, item subtotal, shipping fee calculation, order remarks, and final JPY total.
-   - Instant success modal with receipt breakdown, printable invoice view, and direct Telegram notification link.
-3. **Order Status Tracking (តាមដានស្ថានភាពការកម្មង់)**:
-   - Quick lookup by Order ID and Phone Number.
-   - Visual progress timeline: `New` ➔ `Confirmed` ➔ `Processing` ➔ `Shipping` ➔ `Completed` (or `Cancelled`).
-4. **Admin Dashboard (ផ្ទាំងគ្រប់គ្រង Admin)**:
-   - Secure login modal (default: `admin` / `gojapan2026` with live session security).
-   - Real-time statistics: Total Products, Total Orders, Pending / Processing / Completed orders, Total Revenue in ¥, Customers & Agents count.
-   - **Product Management**: Add new packages/hardware, edit specs, upload/set image URLs, set SKU, price in JPY, and toggle visibility.
-   - **Order Management**: Search, filter by date/status/type, inspect items, change fulfillment status, and export to CSV/Excel.
-   - **Google Sheets Settings & Live Sync**: Test Web App API connection, view sync status, copy full `Code.gs` script, and inspect sheet schema.
+2. **Administrator (Admin Dashboard > Settings)**:
+   - Navigate to the **Settings** tab in the Admin Dashboard.
+   - See a dedicated **Group: FAQ & Customer Guidance Manager** with real-time count of active questions.
+   - View all existing questions arranged by category with quick preview cards.
+   - Click **"+ បន្ថែមសំណួរថ្មី (+ Add New FAQ)"** to open a modal or inline form with fields: Category, Khmer Question, English Question, Khmer Answer, English Answer, and Sort Order.
+   - Edit any existing FAQ inline or via modal.
+   - Reorder questions using up/down controls or sort order values.
+   - Delete outdated or promotional FAQs with instant confirmation.
+   - Click **"💾 រក្សាទុកសំណួរចម្លើយ (Save FAQs)"** or the top sticky save bar to instantly persist changes to localStorage and broadcast live updates to the storefront.
 
 ### Visual Identity & Theme
-- **Aesthetic**: Modern Japanese Minimalist Telecom (inspired by clean Tokyo aesthetics, Docomo, SoftBank, and NTT).
-- **Color Palette**:
-  - Dominant Neutral: Crisp White (`#FFFFFF`) and Soft Slate (`#F8FAFC` / `#0F172A`).
-  - Primary Brand Accent: Japanese Crimson (`#DC2626` / `#E60012`) honoring the Japanese flag motif.
-  - Secondary Accents: Deep Indigo / Navy (`#1E293B`) for technical authority and Emerald (`#16A34A`) for active operational indicators.
-- **Typography**: `Plus Jakarta Sans` for clean Latin headers, combined with clean modern Khmer typography (`Kantumruy Pro`, `Siemreap`) and tabular numbers (`tabular-nums`) for currency and order counts.
-- **Zero-Pill Restraint**: Metadata rendered with clean unboxed text (`·`, `/`) instead of loud pill clusters.
+
+- **Color Palette & Styling**:
+   - Section background: Clean off-white (`bg-white` or subtle `bg-slate-50/60`) alternating with the slate-100 Why Choose Us container.
+   - Accent & Active Highlights: GoJapan magenta (`#FF259D` / `text-gojapan-600` / `ring-gojapan-500/20`) for active category tabs and open accordion indicators.
+   - Accordion items: Clean hairline borders (`border border-slate-200 hover:border-slate-300`), rounded corners matching the product card design language (`rounded-xl`), and subtle soft shadow on expansion.
+- **Zero-Pill Discipline & Typographic Hierarchy**:
+   - Category filter tabs use functional segmented button pills with active states (`bg-gojapan-500 text-white font-semibold shadow-xs` vs `bg-slate-100 text-slate-600 hover:text-slate-900`).
+   - Metadata (category name, question number) is rendered as clean unboxed text with typographic bullet separators (`SIM & eSIM · 4 steps`).
+   - Headlines use `Plus Jakarta Sans` / `Kantumruy Pro` in bold weight (`text-slate-900 text-sm sm:text-base font-bold`).
+- **Interactive Motion**:
+   - Accordion toggle uses smooth expansion/collapse with CSS transitions (`max-h`, `opacity`, and chevron rotation `180deg`).
+   - Micro-interaction response $\le 150\text{ms}$ with smooth settling curves (`cubic-bezier(0.16, 1, 0.3, 1)`).
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-| Decision | Chosen Approach | Rationale | Alternatives Considered |
-|---|---|---|---|
-| **Google Sheets Protocol** | Google Apps Script Web App API (`doPost` / `doGet`) + In-app script generator | Matches the user's explicit specification without requiring client secrets; gives user 100% control over their spreadsheet. | Direct Google Sheets API via OAuth (requires Google Cloud project & service account setup). |
-| **Data Resiliency & Buffer** | Hybrid Architecture (Local Storage Buffer + Direct Web App Dispatch) | Ensures zero data loss: if user hasn't yet pasted their Web App URL, orders are safely stored in browser storage and can be batch-synced or exported anytime. | LocalStorage only (violates user requirement) or Web App only (fails if URL isn't configured yet). |
-| **Currency Strategy** | Pure Japanese Yen (`¥` / `JPY`) with thousand separators | Strictly conforms to the user's clarifying answer. | Dual USD/KHR toggle (declined by user). |
-| **Language Architecture** | Khmer first (ភាសាខ្មែរ) with fast English (EN) toggle | Ensures complete localization as requested while maintaining accessibility for international partners. | Khmer only (hard to audit for non-Khmer speakers). |
+- **Decision 1: Accordion with Category Tabs vs Single Static List**
+  - *Chosen*: Interactive category tabs (`All`, `SIM & eSIM`, `Pocket Wi-Fi`, `Delivery & Return`, `Billing`) with collapsible accordion cards.
+  - *Why*: Accommodates 8–15 in-depth telecom instructions without overwhelming the vertical viewport or forcing excessive scrolling.
+  - *Alternatives Considered*: Multi-column grid (difficult to scan on mobile) or static text list (clutters the landing page).
+
+- **Decision 2: Storage Architecture & Persistence**
+  - *Chosen*: Integrated inside `SiteSettings` as `faqs: FAQItem[]` stored in `localStorage` under `gojapan_site_settings_v1`.
+  - *Why*: Ensures atomic saving with existing Site Settings, leverages established `window.dispatchEvent('gojapan_site_settings_updated')`, and maintains synchronization across open browser tabs without database migrations.
+  - *Alternatives Considered*: Separate localStorage key (risks fragmented saving and unsynchronized state updates).
+
+- **Decision 3: Default Curated Knowledge Base**
+  - *Chosen*: Preload 6 realistic, practical telecom questions in both Khmer and English:
+    1. **SIM Activation**: How to set up APN on iPhone and Android upon landing in Japan.
+    2. **eSIM Installation**: When and how to scan the eSIM QR code before departure.
+    3. **Pocket Wi-Fi Device Return**: How to drop the prepaid Japan Post envelope into any red street postbox or airport mailbox before boarding.
+    4. **Airport Pickup & Delivery**: Locations supported at Narita, Haneda, Kansai, and hotel deliveries.
+    5. **Data Limits & Speed**: Explanation of unlimited 5G/4G fair usage on Docomo and SoftBank.
+    6. **Customer Assistance**: How to contact 24/7 Khmer & Japanese support via Telegram and Hotline.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy
 
+### System Component & Data Flow Diagram
+
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                             GoJapan 24hours Frontend                        │
-├─────────────────────┬────────────────────┬──────────────────────────────────┤
-│ Customer Storefront │ Order Placement &  │ Admin Dashboard                  │
-│ • Catalog & Specs   │   Tracking Engine  │ • Stats, Product CRUD            │
-│ • ISP Packages      │ • Address Cascades │ • Order Processing & CSV Export  │
-│ • Multi-item Cart   │ • Receipt Generator│ • Google Sheets Sync Console     │
-└──────────┬──────────┴─────────┬──────────┴────────────────┬─────────────────┘
-           │                    │                           │
-           ▼                    ▼                           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Unified Data Sync Engine                           │
-│  - Local Store & State Orchestration                                        │
-│  - Apps Script Payload Formatter (CORS-friendly JSON/FormData)              │
-│  - Error Handling & Connection Verifier                                     │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼ HTTP POST/GET
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     Google Sheets via Google Apps Script                    │
-│                                                                             │
-│  Sheet 1: [Orders]      (OrderID, CustomerType, Name, Phone, Total, Status) │
-│  Sheet 2: [Order_Items] (OrderID, SKU, ProductName, Qty, UnitPrice, Total)  │
-│  Sheet 3: [Products]    (SKU, Name, Category, PriceJPY, Speed, StockStatus)│
-│  Sheet 4: [Customers]   (Phone, Name, Type, Telegram, Address, OrdersCount) │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                          StorageService                                │
+│           (DEFAULT_FAQS + localStorage: gojapan_site_settings_v1)      │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+              ┌────────────────────┴────────────────────┐
+              ▼                                         ▼
+   ┌──────────────────────┐                  ┌──────────────────────┐
+   │       App.tsx        │                  │    AdminDashboard    │
+   │   (siteSettings)     │                  │  (Tab: 'settings')   │
+   └──────────┬───────────┘                  └──────────┬───────────┘
+              │                                         │
+              ▼                                         ▼
+   ┌──────────────────────┐                  ┌──────────────────────┐
+   │      FAQSection      │                  │   FAQManagerSection  │
+   │  - Category Tabs     │                  │  - Add / Edit Modal  │
+   │  - Accordion Items   │                  │  - Reorder Controls  │
+   │  - Bilingual Toggle  │                  │  - Delete & Save     │
+   └──────────────────────┘                  └──────────────────────┘
 ```
 
-### Data Schema Specification
+### Data Models (`src/types/index.ts`)
 
-#### 1. Sheet `Orders`
-- `Order_ID`, `Created_At`, `Customer_Type` (Customer/Agent), `Customer_Name`, `Phone_Number`, `Telegram`, `Province_City`, `District_Khan`, `Commune_Sangkat`, `Village`, `Street_Address`, `Subtotal_JPY`, `Shipping_JPY`, `Total_JPY`, `Status` (New, Confirmed, Processing, Shipping, Completed, Cancelled), `Remarks`
+```typescript
+export type FAQCategory = 'general' | 'sim_esim' | 'pocket_wifi' | 'delivery_return' | 'payment_support';
 
-#### 2. Sheet `Order_Items`
-- `Order_ID`, `Item_Index`, `Product_ID`, `Product_Code_SKU`, `Product_Name`, `Category`, `Unit_Price_JPY`, `Quantity`, `Subtotal_JPY`
+export interface FAQItem {
+  id: string;
+  category: FAQCategory;
+  questionKm: string;
+  questionEn: string;
+  answerKm: string;
+  answerEn: string;
+  order: number;
+  isActive: boolean;
+}
 
-#### 3. Sheet `Products`
-- `Product_ID`, `SKU`, `Name_KM`, `Name_EN`, `Category`, `Price_JPY`, `Speed_Quota`, `Carrier_Network`, `Description_KM`, `Description_EN`, `Image_URL`, `Is_Active`
+export interface SiteSettings {
+  // Existing properties...
+  faqs?: FAQItem[];
+}
+```
 
-#### 4. Sheet `Customers`
-- `Phone_Number`, `Customer_Name`, `Customer_Type`, `Telegram`, `Province_City`, `Total_Orders`, `Total_Spent_JPY`, `Last_Order_Date`
+### Component Breakdown
+
+1. **`src/components/FAQSection.tsx`**:
+   - Positioned on the homepage immediately following `<section>` "Why Choose GoJapan 24hours".
+   - State: `selectedCategory` ('all' or specific `FAQCategory`), `openFaqId` (string | null).
+   - Category filtering bar with item count badges.
+   - Accordion rows with question title, category kicker, toggle chevron (`ChevronDown`), and smoothly expanding answer text.
+   - Empty state fallback if no FAQs match the selected filter.
+
+2. **`src/components/AdminDashboard.tsx` (`adminTab === 'settings'`)**:
+   - New section: **Group 6: FAQ & Customer Knowledge Base Manager**.
+   - List of all FAQs with category tags, active toggle, reorder up/down buttons, edit button, and delete button.
+   - Modal for Adding / Editing FAQ items with Khmer and English input fields.
+   - Immediate Save button (`💾 រក្សាទុកសំណួរចម្លើយ`) plus sticky top bar integration.
+   - Reset FAQs to defaults button.
+
+3. **`src/services/storageService.ts`**:
+   - Definition of `DEFAULT_FAQS: FAQItem[]`.
+   - Update `getSiteSettings()` to populate `faqs` from defaults if empty.
+   - Update `saveSiteSettings()` to persist updated FAQ lists and dispatch `gojapan_site_settings_updated`.
+
+4. **Build & GitHub Pages Sync**:
+   - Compile via `npm run build` to update both `dist/` and `docs/` for GitHub Pages deployment.
 
 ---
 
-## 5. Step-by-Step Implementation Strategy
+## 5. Implementation Status & Verification
 
-1. **Data Model & Initial Catalog**:
-   - Create types and realistic Japanese ISP catalog (Pocket Wi-Fi 5G Unlimited, Travel SIM 30-Day 50GB, eSIM Data Pass, Hikari NTT 1Gbps Fiber Home Plan, SoftBank Air 5G Home Router, Mobile Dual-Band WiFi 6 Router).
-   - Implement Cambodian Administrative Divisions dataset (Phnom Penh, Siem Reap, Battambang, Sihanoukville, Kampong Cham, Kandal, etc. with district/commune options).
-2. **Google Apps Script Code Generator & Sync Module**:
-   - Ready-to-deploy `Code.gs` script covering all 4 sheets (`Orders`, `Order_Items`, `Products`, `Customers`) with automated sheet creation, header column initialization, `doPost` order ingestion, and `doGet` sync.
-   - Interactive configuration modal with connection test ping, step-by-step setup guide with screenshots/steps in Khmer and English.
-3. **Storefront & Product Catalog**:
-   - Modern hero section with Japanese telecommunication imagery and quick action buttons.
-   - Search bar and category filters.
-   - Rich product cards with high-speed specs, carrier badges, and JPY pricing.
-4. **Order Cart & Checkout Form**:
-   - Multi-item selector with live quantity calculation.
-   - Customer vs. Agent toggle (with commission/discount preview).
-   - Detailed delivery address inputs (Province, District, Commune, Village, Street).
-   - Order confirmation modal with printable invoice and Telegram dispatch preview.
-5. **Order Tracking View**:
-   - Search by Order ID and Phone Number.
-   - Real-time status badge and fulfillment timeline.
-6. **Admin Dashboard**:
-   - Secure login gate.
-   - Live analytics cards (Revenue in ¥, Orders count, Product count, Agent breakdown).
-   - Product Management: Add, edit, remove, toggle status.
-   - Order Management: Status transition workflow, search, filter, CSV/Excel export.
-   - Google Sheets Sync Console: Test connection, trigger manual push/pull, view logs.
-7. **Verification & Testing**:
-   - Run `compile_applet` to ensure TypeScript compilation without errors.
-   - Test end-to-end order flow, local persistence, status updates, and Apps Script payload generation.
+- [x] **Types & Data Structures**: Added `FAQCategory`, `FAQItem`, and `faqs?: FAQItem[]` to `SiteSettings` in `src/types/index.ts`.
+- [x] **Storage & Preloaded FAQs**: Added 6 realistic bilingual telecom FAQs (`DEFAULT_FAQS`) into `src/services/storageService.ts` and integrated persistence inside `getSiteSettings()`, `saveSiteSettings()`, and `resetSiteSettings()`.
+- [x] **Storefront Component**: Created `src/components/FAQSection.tsx` with collapsible accordion, category filter tabs (`All`, `SIM & eSIM`, `Pocket Wi-Fi`, `Delivery & Return`, `Support`), bilingual support, and 24/7 Telegram/Hotline contact banner.
+- [x] **Storefront Integration**: Rendered `<FAQSection siteSettings={siteSettings} language={language} onGoToOrder={...} />` directly below the "Why Choose Us" component in `src/App.tsx`.
+- [x] **Admin Dashboard Management**: Added Group 6: FAQ & Customer Knowledge Base Manager to `src/components/AdminDashboard.tsx` with full CRUD (Add, Edit, Reorder, Delete, Show/Hide Active toggle, Category filtering, and Reset Defaults).
+- [x] **Build & GitHub Pages Deployment Sync**: Executed `npm run build` successfully, producing optimized bundles in both `dist/` and `docs/`.
+- [x] **Verification**: Zero TypeScript errors (`tsc --noEmit`), dev server running cleanly.

@@ -1,5 +1,5 @@
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
-import { AppsScriptConfig, CustomerRecord, NewsTickerItem, Order, OrderStatus, Product, SiteSettings } from '../types';
+import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, NewsTickerItem, Order, OrderStatus, Product, SiteSettings } from '../types';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'gojapan_products_v1',
@@ -44,6 +44,69 @@ export const DEFAULT_NEWS_ITEMS: NewsTickerItem[] = [
   }
 ];
 
+export const DEFAULT_FAQS: FAQItem[] = [
+  {
+    id: 'faq-1',
+    category: 'sim_esim',
+    order: 1,
+    isActive: true,
+    questionKm: 'តើខ្ញុំត្រូវដំឡើង និងបើកដំណើរការស៊ីមកាតជប៉ុន (Travel SIM) យ៉ាងដូចម្តេច?',
+    questionEn: 'How do I activate and set up APN for my Japan Travel SIM?',
+    answerKm: 'នៅពេលលោកអ្នកចុះចតនៅប្រទេសជប៉ុន សូមដាក់ស៊ីមកាតចូលក្នុងទូរស័ព្ទ បើកមុខងារ Mobile Data និង Data Roaming។ សម្រាប់ iPhone ភាគច្រើនដំណើរការស្វ័យប្រវត្តិ។ ប្រសិនបើត្រូវការកំណត់ APN សូមចូលទៅ Settings > Cellular > Cellular Data Network ហើយបញ្ចូល APN Name: "vmobile.jp" (User: vmobile@g, Pass: 4001)។ ក្រុមការងារ GoJapan មានសៀវភៅណែនាំជាភាសាខ្មែរភ្ជាប់ជូនក្នុងកញ្ចប់ស្រាប់។',
+    answerEn: 'Upon landing in Japan, insert the SIM card and turn on Mobile Data and Data Roaming. Most iPhones configure automatically. If manual APN setup is required, go to Settings > Cellular > Mobile Data Network and enter APN: "vmobile.jp" (Username: vmobile@g, Password: 4001). A step-by-step setup guide is included in your package.'
+  },
+  {
+    id: 'faq-2',
+    category: 'sim_esim',
+    order: 2,
+    isActive: true,
+    questionKm: 'តើខ្ញុំអាចស្កេនដំឡើង eSIM មុនពេលចេញដំណើរពីកម្ពុជាបានទេ?',
+    questionEn: 'Can I install and scan the eSIM QR code before departing from Cambodia?',
+    answerKm: 'បាទ/ចាស! លោកអ្នកអាចស្កេន QR Code ដំឡើង eSIM ក្នុងទូរស័ព្ទមុនពេលចេញដំណើរ ១-២ ថ្ងៃនៅកម្ពុជាដោយភ្ជាប់ Wi-Fi។ កញ្ចប់ទិន្នន័យ (Validity Period) នឹងចាប់ផ្តើមគិតថ្ងៃតែនៅពេលដែលលោកអ្នកចុះចតដល់ប្រទេសជប៉ុន និងភ្ជាប់ជាមួយបណ្តាញ NTT Docomo ឬ SoftBank ប៉ុណ្ណោះ។',
+    answerEn: 'Yes! You can scan the QR code to install the eSIM profile 1-2 days before departure using Wi-Fi at home. The validity period will only start counting once you land in Japan and your device registers on the NTT Docomo or SoftBank mobile network.'
+  },
+  {
+    id: 'faq-3',
+    category: 'pocket_wifi',
+    order: 3,
+    isActive: true,
+    questionKm: 'តើខ្ញុំត្រូវប្រគល់ឧបករណ៍ Pocket Wi-Fi ត្រឡប់មកវិញដោយរបៀបណា មុនពេលចាកចេញពីជប៉ុន?',
+    questionEn: 'How do I return the Pocket Wi-Fi router before leaving Japan?',
+    answerKm: 'ងាយស្រួលបំផុត! ក្នុងកញ្ចប់ឧបករណ៍មានស្រោមសំបុត្រប្រៃសណីយ៍ជប៉ុន (Japan Post Letter Pack) បង់ថ្លៃរួចជាស្រេច។ នៅថ្ងៃចុងក្រោយ សូមដាក់ Router និងខ្សែសាកចូលក្នុងស្រោមសំបុត្រ បិទជិត ហើយទម្លាក់ចូលក្នុងប្រអប់សំបុត្រពណ៌ក្រហម (Red Postbox) ណាមួយក៏បានតាមដងផ្លូវ សណ្ឋាគារ ឬនៅព្រលានយន្តហោះ (Narita, Haneda, Kansai) មុនពេលឡើងយន្តហោះ ដោយមិនគិតថ្លៃអ្វីបន្ថែមឡើយ។',
+    answerEn: 'Super simple! Your rental package includes a prepaid Japan Post return envelope. On your final day, pack the router and cable into the envelope, seal it, and drop it into any red street postbox, convenience store mailbox, or airport terminal postbox (Narita, Haneda, Kansai) before boarding. No return fees required!'
+  },
+  {
+    id: 'faq-4',
+    category: 'delivery_return',
+    order: 4,
+    isActive: true,
+    questionKm: 'តើខ្ញុំអាចទទួលឧបករណ៍នៅព្រលានយន្តហោះជប៉ុន ឬដឹកជញ្ជូនដល់សណ្ឋាគារបានទេ?',
+    questionEn: 'Can I pick up the package at Japan airports or have it delivered to my hotel?',
+    answerKm: 'បាន! GoJapan 24hours គាំទ្រសេវាទទួលនៅការិយាល័យប្រៃសណីយ៍ព្រលានយន្តហោះធំៗ (Narita Airport Terminal 1 & 2, Haneda Airport, Kansai Airport) និងដឹកជញ្ជូនរហ័សទូទាំងប្រទេសជប៉ុនដល់សណ្ឋាគារ ឬ Airbnb ក្នុងរយៈពេល ១-២ ថ្ងៃ។ លើសពីនេះ យើងក៏មានសេវាផ្ញើស៊ីមកាតជូនដល់ផ្ទះនៅកម្ពុជាមុនពេលហោះហើរផងដែរ។',
+    answerEn: 'Yes! We support airport post office pickup at Narita (Terminal 1 & 2), Haneda, and Kansai airports, as well as fast 1-2 day nationwide shipping directly to any hotel or Airbnb across Japan. We also offer pre-departure delivery in Cambodia for physical SIM cards.'
+  },
+  {
+    id: 'faq-5',
+    category: 'general',
+    order: 5,
+    isActive: true,
+    questionKm: 'តើកញ្ចប់អ៊ីនធឺណិតមានដែនកំណត់ទិន្នន័យ (FUP) ឬកាត់បន្ថយល្បឿនដែរឬទេ?',
+    questionEn: 'Is the data truly unlimited, or will speeds be throttled under Fair Usage Policy?',
+    answerKm: 'កញ្ចប់ Pocket Wi-Fi 5G និងស៊ីមកាតរបស់ GoJapan ដំណើរការលើបណ្តាញផ្ទាល់ NTT Docomo និង SoftBank ល្បឿនខ្ពស់រហូតដល់ 3.9Gbps គ្មានដែនកំណត់ទិន្នន័យសម្រាប់ប្រើប្រាស់ធម្មតាប្រចាំថ្ងៃ ដូចជាមើល YouTube, TikTok, Live Stream, Google Maps និងការងារ។ មិនមានការកាត់បន្ថយល្បឿនឡើយ។',
+    answerEn: 'GoJapan devices and SIMs run directly on official NTT Docomo and SoftBank networks with speeds up to 3.9Gbps. They provide unlimited high-speed data for routine daily travel use including streaming, navigation, social media, and work with zero throttling.'
+  },
+  {
+    id: 'faq-6',
+    category: 'payment_support',
+    order: 6,
+    isActive: true,
+    questionKm: 'ប្រសិនបើជួបបញ្ហាតភ្ជាប់នៅប្រទេសជប៉ុន តើខ្ញុំអាចទាក់ទងជំនួយបច្ចេកទេសបានយ៉ាងដូចម្តេច?',
+    questionEn: 'If I encounter connectivity issues in Japan, how can I reach support?',
+    answerKm: 'ក្រុមការងារជំនួយបច្ចេកទេសរបស់ GoJapan ប្រចាំការ ២៤ ម៉ោង ៧ ថ្ងៃក្នុងមួយសប្តាហ៍ ទាំងជាភាសាខ្មែរ និងជប៉ុន។ លោកអ្នកអាចទាក់ទងមកកាន់ Telegram Support: @gojapan24h ឬទូរស័ព្ទ Hotline: +855 12 889 977 / +81 80 1234 5678។ យើងឆ្លើយតបភ្លាមៗក្នុងរយៈពេលក្រោម ៥ នាទី។',
+    answerEn: 'Our technical care team is on duty 24 hours a day, 7 days a week in both Khmer and Japanese. You can contact us instantly via Telegram (@gojapan24h) or Hotline (+855 12 889 977 / +81 80 1234 5678) with an average response time of under 5 minutes.'
+  }
+];
+
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   siteName: 'GoJapan 24hours',
   taglineKm: 'សេវាកម្មអ៊ីនធឺណិត និងទូរគមនាគមន៍ជប៉ុន 24 ម៉ោង',
@@ -52,6 +115,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   announcementEn: '⚡ Limited Time Offer: 10% discount on 5G Pocket Wi-Fi & eSIM packages booked this month!',
   showAnnouncement: true,
   announcementsList: DEFAULT_NEWS_ITEMS,
+  faqs: DEFAULT_FAQS,
   hotline: '+855 12 889 977 / +81 80 1234 5678',
   telegramUsername: '@gojapan24h',
   facebookUrl: 'https://facebook.com/gojapan24hours',
@@ -605,10 +669,14 @@ export const storageService = {
         const announcementsList = (parsed.announcementsList && Array.isArray(parsed.announcementsList) && parsed.announcementsList.length > 0)
           ? parsed.announcementsList
           : DEFAULT_SITE_SETTINGS.announcementsList;
+        const faqs = (parsed.faqs && Array.isArray(parsed.faqs) && parsed.faqs.length > 0)
+          ? parsed.faqs
+          : DEFAULT_SITE_SETTINGS.faqs;
         return {
           ...DEFAULT_SITE_SETTINGS,
           ...parsed,
           announcementsList,
+          faqs,
         };
       }
     } catch {

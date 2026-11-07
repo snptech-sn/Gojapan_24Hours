@@ -28,9 +28,12 @@ import {
   Copy,
   Check,
   UserPlus,
+  HelpCircle,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
-import { storageService } from '../services/storageService';
-import { AppsScriptConfig, CustomerRecord, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, SiteSettings } from '../types';
+import { storageService, DEFAULT_FAQS } from '../services/storageService';
+import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, SiteSettings } from '../types';
 import { translations } from '../utils/translations';
 
 interface AdminDashboardProps {
@@ -161,6 +164,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState<boolean>(false);
   const [isNewCustomer, setIsNewCustomer] = useState<boolean>(false);
+
+  // FAQ Modal (Add / Edit) - Full Admin Permission
+  const [editingFaq, setEditingFaq] = useState<FAQItem | null>(null);
+  const [isFaqModalOpen, setIsFaqModalOpen] = useState<boolean>(false);
+  const [isNewFaq, setIsNewFaq] = useState<boolean>(false);
+  const [faqAdminCategoryFilter, setFaqAdminCategoryFilter] = useState<FAQCategory | 'all'>('all');
 
   // Web App Site Settings state - Full Admin Permission
   const [currentSiteSettings, setCurrentSiteSettings] = useState<SiteSettings>(() => siteSettings || storageService.getSiteSettings());
@@ -538,6 +547,152 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       setSettingsSavedToast(
         language === 'km' ? 'បានកំណត់ទៅលំនាំដើមរួចរាល់!' : 'Reset to default settings!'
+      );
+      setTimeout(() => setSettingsSavedToast(null), 3000);
+    }
+  };
+
+  // FAQ ACTIONS - FULL ADMIN PERMISSION
+  const handleOpenAddFaq = () => {
+    handleTouchSession();
+    const currentList = currentSiteSettings.faqs || [];
+    const maxOrder = currentList.reduce((max, f) => (f.order > max ? f.order : max), 0);
+    setEditingFaq({
+      id: `faq-${Date.now()}`,
+      category: 'sim_esim',
+      order: maxOrder + 1,
+      isActive: true,
+      questionKm: '',
+      questionEn: '',
+      answerKm: '',
+      answerEn: '',
+    });
+    setIsNewFaq(true);
+    setIsFaqModalOpen(true);
+  };
+
+  const handleOpenEditFaq = (faq: FAQItem) => {
+    handleTouchSession();
+    setEditingFaq({ ...faq });
+    setIsNewFaq(false);
+    setIsFaqModalOpen(true);
+  };
+
+  const handleSaveFaqModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFaq) return;
+    handleTouchSession();
+
+    let updatedFaqs = [...(currentSiteSettings.faqs || [])];
+    if (isNewFaq) {
+      updatedFaqs.push(editingFaq);
+    } else {
+      const idx = updatedFaqs.findIndex((f) => f.id === editingFaq.id);
+      if (idx >= 0) {
+        updatedFaqs[idx] = editingFaq;
+      } else {
+        updatedFaqs.push(editingFaq);
+      }
+    }
+    updatedFaqs.sort((a, b) => a.order - b.order);
+
+    const updatedSettings = {
+      ...currentSiteSettings,
+      faqs: updatedFaqs,
+    };
+    setCurrentSiteSettings(updatedSettings);
+    setIsSettingsDirty(false);
+    setIsFaqModalOpen(false);
+    setEditingFaq(null);
+
+    storageService.saveSiteSettings(updatedSettings);
+    if (onSiteSettingsUpdated) {
+      onSiteSettingsUpdated(updatedSettings);
+    }
+    setSettingsSavedToast(
+      language === 'km'
+        ? `✅ បានរក្សាទុកសំណួរចម្លើយ «${editingFaq.questionKm || editingFaq.questionEn}» ដោយជោគជ័យ!`
+        : `✅ FAQ item saved successfully!`
+    );
+    setTimeout(() => setSettingsSavedToast(null), 3500);
+  };
+
+  const handleDeleteFaq = (faqId: string) => {
+    handleTouchSession();
+    if (window.confirm(language === 'km' ? 'តើអ្នកប្រាកដជាចង់លុបសំណួរនេះមែនទេ?' : 'Delete this FAQ item?')) {
+      const updatedFaqs = (currentSiteSettings.faqs || []).filter((f) => f.id !== faqId);
+      const updatedSettings = {
+        ...currentSiteSettings,
+        faqs: updatedFaqs,
+      };
+      setCurrentSiteSettings(updatedSettings);
+      setIsSettingsDirty(false);
+      storageService.saveSiteSettings(updatedSettings);
+      if (onSiteSettingsUpdated) {
+        onSiteSettingsUpdated(updatedSettings);
+      }
+      setSettingsSavedToast(
+        language === 'km' ? 'បានលុបសំណួររួចរាល់!' : 'FAQ deleted successfully!'
+      );
+      setTimeout(() => setSettingsSavedToast(null), 3000);
+    }
+  };
+
+  const handleToggleFaqActive = (faqId: string) => {
+    handleTouchSession();
+    const updatedFaqs = (currentSiteSettings.faqs || []).map((f) =>
+      f.id === faqId ? { ...f, isActive: !f.isActive } : f
+    );
+    const updatedSettings = {
+      ...currentSiteSettings,
+      faqs: updatedFaqs,
+    };
+    setCurrentSiteSettings(updatedSettings);
+    setIsSettingsDirty(false);
+    storageService.saveSiteSettings(updatedSettings);
+    if (onSiteSettingsUpdated) {
+      onSiteSettingsUpdated(updatedSettings);
+    }
+  };
+
+  const handleMoveFaq = (index: number, direction: 'up' | 'down') => {
+    handleTouchSession();
+    const list = [...(currentSiteSettings.faqs || [])];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+
+    const reordered = list.map((item, idx) => ({ ...item, order: idx + 1 }));
+    const updatedSettings = {
+      ...currentSiteSettings,
+      faqs: reordered,
+    };
+    setCurrentSiteSettings(updatedSettings);
+    setIsSettingsDirty(false);
+    storageService.saveSiteSettings(updatedSettings);
+    if (onSiteSettingsUpdated) {
+      onSiteSettingsUpdated(updatedSettings);
+    }
+  };
+
+  const handleResetFaqsToDefault = () => {
+    handleTouchSession();
+    if (window.confirm(language === 'km' ? 'កំណត់សំណួរទាំងអស់ទៅលំនាំដើម (Default FAQs)?' : 'Reset all FAQs to default list?')) {
+      const updatedSettings = {
+        ...currentSiteSettings,
+        faqs: DEFAULT_FAQS,
+      };
+      setCurrentSiteSettings(updatedSettings);
+      setIsSettingsDirty(false);
+      storageService.saveSiteSettings(updatedSettings);
+      if (onSiteSettingsUpdated) {
+        onSiteSettingsUpdated(updatedSettings);
+      }
+      setSettingsSavedToast(
+        language === 'km' ? 'បានកំណត់សំណួរទៅលំនាំដើមរួចរាល់!' : 'Reset FAQs to defaults successfully!'
       );
       setTimeout(() => setSettingsSavedToast(null), 3000);
     }
@@ -2045,6 +2200,257 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
+            {/* Group 6: FAQ & Customer Knowledge Base Manager */}
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-gojapan-50 text-gojapan-600 rounded-xl">
+                    <HelpCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-slate-800 text-sm">
+                        {language === 'km' ? 'ផ្នែកទី ៦៖ សំណួរចម្លើយអតិថិជន (FAQ & Help Center)' : 'Group 6: Customer FAQ & Knowledge Base'}
+                      </h4>
+                      <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-gojapan-100 text-gojapan-700">
+                        {(currentSiteSettings.faqs || []).length} {language === 'km' ? 'សំណួរ' : 'items'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {language === 'km'
+                        ? 'គ្រប់គ្រងសំណួរដែលអតិថិជនសួរញឹកញាប់ (ការដំឡើង SIM/eSIM, ការបង្វិលសងឧបករណ៍ Pocket Wi-Fi តាមប្រអប់សំបុត្រក្រហម, និងសេវាកម្មដឹកជញ្ជូន)'
+                        : 'Configure FAQs displayed under "Why Choose Us" on the storefront (SIM activation, router red-mailbox return, delivery, etc.)'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleResetFaqsToDefault}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    title={language === 'km' ? 'កំណត់សំណួរទៅលំនាំដើម' : 'Reset to default telecom questions'}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{language === 'km' ? 'កំណត់លំនាំដើម' : 'Reset Defaults'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenAddFaq}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg shadow-xs shadow-gojapan-500/20 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'km' ? '+ បន្ថែមសំណួរថ្មី' : '+ Add Question'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Admin Category Filter Tabs */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {(
+                  [
+                    { id: 'all', km: 'ទាំងអស់', en: 'All' },
+                    { id: 'sim_esim', km: 'SIM & eSIM', en: 'SIM & eSIM' },
+                    { id: 'pocket_wifi', km: 'Pocket Wi-Fi & រ៉ោតទ័រ', en: 'Pocket Wi-Fi & Routers' },
+                    { id: 'delivery_return', km: 'ការដឹកជញ្ជូន & បង្វិលសង', en: 'Delivery & Returns' },
+                    { id: 'payment_support', km: 'ការទូទាត់ & ជំនួយ', en: 'Payment & Support' },
+                  ] as { id: FAQCategory | 'all'; km: string; en: string }[]
+                ).map((tab) => {
+                  const count =
+                    tab.id === 'all'
+                      ? (currentSiteSettings.faqs || []).length
+                      : (currentSiteSettings.faqs || []).filter((f) => f.category === tab.id).length;
+                  const isSelected = faqAdminCategoryFilter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFaqAdminCategoryFilter(tab.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>{language === 'km' ? tab.km : tab.en}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                          isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* FAQ Items List */}
+              <div className="space-y-3">
+                {(() => {
+                  const allFaqs = currentSiteSettings.faqs || [];
+                  const filteredFaqs =
+                    faqAdminCategoryFilter === 'all'
+                      ? allFaqs
+                      : allFaqs.filter((f) => f.category === faqAdminCategoryFilter);
+
+                  if (filteredFaqs.length === 0) {
+                    return (
+                      <div className="p-8 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-3">
+                        <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                          <HelpCircle className="w-5 h-5" />
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {language === 'km'
+                            ? 'មិនទាន់មានសំណួរនៅក្នុងប្រភេទនេះនៅឡើយទេ'
+                            : 'No FAQ items found in this category.'}
+                        </p>
+                        <div className="flex justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleOpenAddFaq}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{language === 'km' ? 'បន្ថែមសំណួរថ្មី' : 'Add FAQ'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleResetFaqsToDefault}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>{language === 'km' ? 'ទាញយកសំណួរគំរូ' : 'Load Defaults'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const categoryBadges: Record<FAQCategory, { labelKm: string; labelEn: string; badge: string }> = {
+                    general: { labelKm: 'ព័ត៌មានទូទៅ', labelEn: 'General Info', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
+                    sim_esim: { labelKm: 'SIM & eSIM', labelEn: 'SIM & eSIM', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                    pocket_wifi: { labelKm: 'Pocket Wi-Fi', labelEn: 'Pocket Wi-Fi', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
+                    delivery_return: { labelKm: 'ដឹកជញ្ជូន & បង្វិលសង', labelEn: 'Delivery & Return', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+                    payment_support: { labelKm: 'ការទូទាត់ & ជំនួយ', labelEn: 'Payment & Support', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
+                  };
+
+                  return filteredFaqs.map((faq) => {
+                    const originalIndex = allFaqs.findIndex((f) => f.id === faq.id);
+                    const catInfo = categoryBadges[faq.category] || categoryBadges.sim_esim;
+
+                    return (
+                      <div
+                        key={faq.id}
+                        className={`p-4 bg-white rounded-xl border transition-all ${
+                          faq.isActive
+                            ? 'border-slate-200 shadow-2xs hover:border-slate-300'
+                            : 'border-slate-200/60 bg-slate-50/70 opacity-75'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            {/* Order Controls */}
+                            <div className="flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
+                              <button
+                                type="button"
+                                disabled={originalIndex <= 0}
+                                onClick={() => handleMoveFaq(originalIndex, 'up')}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                title="Move up"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="text-[11px] font-mono font-bold text-slate-500 px-1.5 py-0.5 bg-slate-100 rounded">
+                                #{faq.order}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={originalIndex >= allFaqs.length - 1}
+                                onClick={() => handleMoveFaq(originalIndex, 'down')}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                title="Move down"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Content Preview */}
+                            <div className="space-y-1.5 flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${catInfo.badge}`}>
+                                  {language === 'km' ? catInfo.labelKm : catInfo.labelEn}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    faq.isActive
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-slate-200 text-slate-600'
+                                  }`}
+                                >
+                                  {faq.isActive
+                                    ? language === 'km' ? 'សកម្ម (Active)' : 'Active'
+                                    : language === 'km' ? 'លាក់ (Hidden)' : 'Hidden'}
+                                </span>
+                              </div>
+
+                              <div>
+                                <h5 className="font-bold text-slate-900 text-sm leading-snug">
+                                  {faq.questionKm || <span className="text-slate-400 italic">គ្មានសំណួរភាសាខ្មែរ</span>}
+                                </h5>
+                                {faq.questionEn && (
+                                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                    {faq.questionEn}
+                                  </p>
+                                )}
+                              </div>
+
+                              <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                {faq.answerKm || faq.answerEn}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Quick Actions */}
+                          <div className="flex items-center gap-1.5 self-end sm:self-start shrink-0 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFaqActive(faq.id)}
+                              className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-colors cursor-pointer ${
+                                faq.isActive
+                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                              }`}
+                            >
+                              {faq.isActive
+                                ? language === 'km' ? 'លាក់' : 'Hide'
+                                : language === 'km' ? 'បង្ហាញ' : 'Show'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditFaq(faq)}
+                              className="p-1.5 text-slate-500 hover:text-gojapan-600 hover:bg-gojapan-50 rounded-lg transition-colors cursor-pointer"
+                              title={language === 'km' ? 'កែប្រែសំណួរ' : 'Edit FAQ'}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFaq(faq.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title={language === 'km' ? 'លុបសំណួរ' : 'Delete FAQ'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+
             {/* Submit Bar */}
             <div className="flex justify-end pt-2">
               <button
@@ -2747,6 +3153,165 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>Save Customer</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FAQ ADD / EDIT MODAL */}
+      {isFaqModalOpen && editingFaq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-gojapan-50 text-gojapan-600 rounded-lg">
+                  <HelpCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {isNewFaq
+                      ? language === 'km' ? 'បន្ថែមសំណួរថ្មី (Add FAQ)' : 'Add New FAQ'
+                      : language === 'km' ? 'កែប្រែសំណួរចម្លើយ (Edit FAQ)' : 'Edit FAQ Item'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {language === 'km'
+                      ? 'បញ្ចូលសំណួរ និងចម្លើយជាពីរភាសា (ខ្មែរ និងអង់គ្លេស)'
+                      : 'Provide bilingual question and clear guidance for customers'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFaqModalOpen(false);
+                  setEditingFaq(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFaqModal} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {language === 'km' ? 'ប្រភេទសំណួរ (Category)' : 'Category'}
+                  </label>
+                  <select
+                    value={editingFaq.category}
+                    onChange={(e) => setEditingFaq({ ...editingFaq, category: e.target.value as FAQCategory })}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-medium bg-white"
+                  >
+                    <option value="sim_esim">SIM & eSIM</option>
+                    <option value="pocket_wifi">Pocket Wi-Fi & Routers</option>
+                    <option value="delivery_return">Delivery & Returns</option>
+                    <option value="payment_support">Payment & Support</option>
+                    <option value="general">General (ព័ត៌មានទូទៅ)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {language === 'km' ? 'លំដាប់លំដោយ (Order)' : 'Display Order'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingFaq.order}
+                    onChange={(e) => setEditingFaq({ ...editingFaq, order: parseInt(e.target.value) || 1 })}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-mono font-bold"
+                  />
+                </div>
+
+                <div className="flex items-center sm:pt-6">
+                  <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={editingFaq.isActive}
+                      onChange={(e) => setEditingFaq({ ...editingFaq, isActive: e.target.checked })}
+                      className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
+                    />
+                    <span className="font-semibold text-slate-700">
+                      {language === 'km' ? 'បង្ហាញលើគេហទំព័រ (Active)' : 'Active on Storefront'}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {language === 'km' ? 'សំណួរជាភាសាខ្មែរ (Question - Khmer) *' : 'Question (Khmer) *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ឧទាហរណ៍៖ តើត្រូវធ្វើដូចម្តេចដើម្បីដំណើរការស៊ីមកាត (SIM Card) ពេលទៅដល់ជប៉ុន?"
+                  value={editingFaq.questionKm}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, questionKm: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {language === 'km' ? 'សំណួរជាភាសាអង់គ្លេស (Question - English)' : 'Question (English)'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. How do I activate my Japan SIM card upon arrival?"
+                  value={editingFaq.questionEn}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, questionEn: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {language === 'km' ? 'ចម្លើយពន្យល់ជាភាសាខ្មែរ (Answer - Khmer) *' : 'Answer (Khmer) *'}
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="សរសេរការណែនាំលម្អិតសម្រាប់អតិថិជន..."
+                  value={editingFaq.answerKm}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, answerKm: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 leading-relaxed font-sans"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {language === 'km' ? 'ចម្លើយពន្យល់ជាភាសាអង់គ្លេស (Answer - English)' : 'Answer (English)'}
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder="Provide detailed instructions in English..."
+                  value={editingFaq.answerEn}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, answerEn: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 leading-relaxed font-sans"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFaqModalOpen(false);
+                    setEditingFaq(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                >
+                  {language === 'km' ? 'បោះបង់' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 shadow-sm shadow-gojapan-500/20 rounded-lg cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'រក្សាទុកសំណួរ' : 'Save FAQ Item'}</span>
                 </button>
               </div>
             </form>

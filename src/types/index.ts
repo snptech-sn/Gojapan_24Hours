@@ -92,6 +92,19 @@ export interface NewsTickerItem {
   tagEn: string;
 }
 
+export type FAQCategory = 'general' | 'sim_esim' | 'pocket_wifi' | 'delivery_return' | 'payment_support';
+
+export interface FAQItem {
+  id: string;
+  category: FAQCategory;
+  questionKm: string;
+  questionEn: string;
+  answerKm: string;
+  answerEn: string;
+  order: number;
+  isActive: boolean;
+}
+
 export interface SiteSettings {
   siteName: string;
   taglineKm: string;
@@ -100,6 +113,7 @@ export interface SiteSettings {
   announcementEn: string;
   showAnnouncement: boolean;
   announcementsList?: NewsTickerItem[];
+  faqs?: FAQItem[];
   hotline: string;
   telegramUsername: string;
   facebookUrl: string;
@@ -114,4 +128,5 @@ export interface SiteSettings {
   officeAddressKm: string;
   officeAddressEn: string;
 }
+
 
