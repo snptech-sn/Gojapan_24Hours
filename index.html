@@ -23,6 +23,28 @@
   </head>
   <body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-[#FF259D] selection:text-white">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.__loadPrebuiltBundle = function () {
+        if (window.__prebuiltLoaded) return;
+        window.__prebuiltLoaded = true;
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = './docs/assets/app.css';
+        document.head.appendChild(link);
+        var script = document.createElement('script');
+        script.type = 'module';
+        script.src = './docs/assets/app.js';
+        document.body.appendChild(script);
+      };
+    </script>
+    <script type="module" src="/src/main.tsx" onerror="window.__loadPrebuiltBundle && window.__loadPrebuiltBundle()"></script>
+    <script>
+      if (
+        location.hostname.endsWith('github.io') &&
+        document.querySelector('script[src="/src/main.tsx"]')
+      ) {
+        window.__loadPrebuiltBundle();
+      }
+    </script>
   </body>
 </html>

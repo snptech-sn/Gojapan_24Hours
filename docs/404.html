@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GoJapan 24hours - Japanese ISP & Telecom Services</title>
     <meta name="description" content="ប្រព័ន្ធគ្រប់គ្រងការលក់ និងកម្មង់សេវាអ៊ីនធឺណិតជប៉ុន GoJapan 24hours (Japanese ISP & Telecom E-Commerce)" />
-    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
-    <link rel="icon" type="image/png" sizes="192x192" href="./favicon.png" />
-    <link rel="icon" type="image/jpeg" href="./gojapan-logo.jpg" />
-    <link rel="shortcut icon" href="./favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="icon" type="image/x-icon" href="./assets/favicon-CreacvWq.ico" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./assets/favicon-BFHA87EO.png" />
+    <link rel="icon" type="image/jpeg" href="./assets/gojapan-logo-B2rFIg9u.jpg" />
+    <link rel="shortcut icon" href="./assets/favicon-CreacvWq.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-CvkIAfqm.png" />
     <meta name="theme-color" content="#FF259D" />
     <meta property="og:title" content="GoJapan 24hours - Japanese ISP & Telecom Services" />
     <meta property="og:description" content="ប្រព័ន្ធគ្រប់គ្រងការលក់ និងកម្មង់សេវាអ៊ីនធឺណិតជប៉ុន GoJapan 24hours" />
-    <meta property="og:image" content="./gojapan-logo.jpg" />
+    <meta property="og:image" content="./assets/gojapan-logo-B2rFIg9u.jpg" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="./gojapan-logo.jpg" />
+    <meta name="twitter:image" content="./assets/gojapan-logo-B2rFIg9u.jpg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -25,5 +25,27 @@
   </head>
   <body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-[#FF259D] selection:text-white">
     <div id="root"></div>
+    <script>
+      window.__loadPrebuiltBundle = function () {
+        if (window.__prebuiltLoaded) return;
+        window.__prebuiltLoaded = true;
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = './docs/assets/app.css';
+        document.head.appendChild(link);
+        var script = document.createElement('script');
+        script.type = 'module';
+        script.src = './docs/assets/app.js';
+        document.body.appendChild(script);
+      };
+    </script>
+    <script>
+      if (
+        location.hostname.endsWith('github.io') &&
+        document.querySelector('script[src="/src/main.tsx"]')
+      ) {
+        window.__loadPrebuiltBundle();
+      }
+    </script>
   </body>
 </html>
