@@ -84,6 +84,48 @@ export interface AppsScriptConfig {
   lastStatus?: string;
 }
 
+export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
+
+export interface TelegramDetectedChat {
+  chatId: string;
+  title: string;
+  type: 'group' | 'supergroup' | 'channel' | 'private';
+  username?: string;
+}
+
+export interface TelegramConfig {
+  botToken: string;
+  chatId: string;
+  chatTitle?: string;
+  chatType?: 'group' | 'supergroup' | 'channel' | 'private';
+  enabled: boolean;
+  notifyOnNewOrder: boolean;
+  notifyOnStatusUpdate: boolean;
+  lastNotifiedAt?: string;
+  lastReportSentAt?: string;
+  lastStatus?: string;
+}
+
+export interface SalesReportSummary {
+  period: ReportPeriod;
+  periodLabelKm: string;
+  periodLabelEn: string;
+  dateRangeLabel: string;
+  orders: Order[];
+  totalOrders: number;
+  activeRevenueJPY: number;
+  totalShippingJPY: number;
+  customerOrdersCount: number;
+  agentOrdersCount: number;
+  statusCounts: Record<OrderStatus, number>;
+  topProducts: {
+    sku: string;
+    name: string;
+    quantity: number;
+    revenueJPY: number;
+  }[];
+}
+
 export interface NewsTickerItem {
   id: string;
   km: string;

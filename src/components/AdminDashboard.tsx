@@ -31,9 +31,13 @@ import {
   HelpCircle,
   ArrowUp,
   ArrowDown,
+  Send,
+  Bell,
+  Calendar,
+  BarChart3,
 } from 'lucide-react';
 import { storageService, DEFAULT_FAQS } from '../services/storageService';
-import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, SiteSettings } from '../types';
+import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, ReportPeriod, SiteSettings, TelegramConfig, TelegramDetectedChat } from '../types';
 import { translations } from '../utils/translations';
 
 interface AdminDashboardProps {
@@ -188,6 +192,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
   const [isSyncingOrders, setIsSyncingOrders] = useState<boolean>(false);
   const [connectionResult, setConnectionResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Telegram Bot & Periodic Reports state
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => storageService.getTelegramConfig());
+  const [tgBotToken, setTgBotToken] = useState<string>(telegramConfig.botToken || '');
+  const [tgChatId, setTgChatId] = useState<string>(telegramConfig.chatId || '');
+  const [tgEnabled, setTgEnabled] = useState<boolean>(telegramConfig.enabled ?? true);
+  const [tgNotifyNewOrder, setTgNotifyNewOrder] = useState<boolean>(telegramConfig.notifyOnNewOrder ?? true);
+  const [tgNotifyStatusUpdate, setTgNotifyStatusUpdate] = useState<boolean>(telegramConfig.notifyOnStatusUpdate ?? true);
+  const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
+  const [isDetectingChatId, setIsDetectingChatId] = useState<boolean>(false);
+  const [isSendingReport, setIsSendingReport] = useState<ReportPeriod | null>(null);
+  const [isSendingOrderTelegramId, setIsSendingOrderTelegramId] = useState<string | null>(null);
+  const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [detectedGroups, setDetectedGroups] = useState<TelegramDetectedChat[]>([]);
+  const [selectedReportPeriod, setSelectedReportPeriod] = useState<ReportPeriod>('weekly');
 
   // Customers
   const [customers, setCustomers] = useState<CustomerRecord[]>(() => storageService.getCustomers());
@@ -804,6 +823,190 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setAppsScriptConfig(storageService.getAppsScriptConfig());
   };
 
+  // TELEGRAM BOT & REPORT ACTIONS (TARGETING TELEGRAM GROUP)
+  const handleSaveTelegramSettings = () => {
+    handleTouchSession();
+    const normalizedId = storageService.normalizeGroupChatId(tgChatId);
+    setTgChatId(normalizedId);
+
+    const isGroupChat = normalizedId.startsWith('-') || normalizedId.startsWith('@');
+    const updated: TelegramConfig = {
+      ...telegramConfig,
+      botToken: tgBotToken.trim(),
+      chatId: normalizedId,
+      chatType: isGroupChat ? (telegramConfig.chatType || 'supergroup') : 'private',
+      enabled: tgEnabled,
+      notifyOnNewOrder: tgNotifyNewOrder,
+      notifyOnStatusUpdate: tgNotifyStatusUpdate,
+      lastStatus: tgBotToken.trim() && normalizedId ? 'Configured & Ready' : 'Not configured',
+    };
+    storageService.saveTelegramConfig(updated);
+    setTelegramConfig(updated);
+
+    if (normalizedId && !isGroupChat) {
+      const warnMsg =
+        language === 'km'
+          ? `⚠️ លេខសម្គាល់ (${normalizedId}) គឺជាឆាតផ្ទាល់ខ្លួនជាមួយ Bot មិនមែន Group ទេ! ដើម្បីផ្ញើចូល Group សូមបញ្ចូល Bot ទៅក្នុង Telegram Group វាយ "/start" ក្នុង Group រួចចុច «🔍 ទាញយក Group ID» (លេខសម្គាល់ Group ត្រូវផ្តើមដោយសញ្ញាដក "-" ដូចជា -100...)។`
+          : `⚠️ Chat ID (${normalizedId}) is a private Bot chat, not a Group! Add your Bot to your Telegram Group, send "/start" in the Group, and click "Detect Group ID" (Group IDs start with "-").`;
+      setTelegramFeedback({ success: false, message: warnMsg });
+      return;
+    }
+
+    const msg =
+      language === 'km'
+        ? `✅ បានរក្សាទុកការកំណត់ផ្ញើសារចូល Telegram Group (${updated.chatTitle || normalizedId || 'រួចរាល់'}) ដោយជោគជ័យ!`
+        : `✅ Telegram Group settings (${updated.chatTitle || normalizedId || 'Ready'}) saved successfully!`;
+    setTelegramFeedback({ success: true, message: msg });
+    setSettingsSavedToast(msg);
+    setTimeout(() => setSettingsSavedToast(null), 3500);
+  };
+
+  const handleDetectTelegramChatId = async () => {
+    handleTouchSession();
+    setIsDetectingChatId(true);
+    setTelegramFeedback(null);
+    const res = await storageService.detectTelegramChatId(tgBotToken.trim());
+    setIsDetectingChatId(false);
+    setTelegramFeedback({ success: res.success, message: res.message });
+    if (res.detectedGroups && res.detectedGroups.length > 0) {
+      setDetectedGroups(res.detectedGroups);
+    }
+    if (res.success && res.chatId) {
+      setTgChatId(res.chatId);
+      const updated: TelegramConfig = {
+        ...telegramConfig,
+        botToken: tgBotToken.trim(),
+        chatId: res.chatId,
+        chatTitle: res.chatTitle,
+        chatType: res.chatType || 'supergroup',
+        enabled: tgEnabled,
+        notifyOnNewOrder: tgNotifyNewOrder,
+        notifyOnStatusUpdate: tgNotifyStatusUpdate,
+        lastStatus: `Connected Group: ${res.chatTitle || res.chatId}`,
+      };
+      storageService.saveTelegramConfig(updated);
+      setTelegramConfig(updated);
+      setSettingsSavedToast(res.message);
+      setTimeout(() => setSettingsSavedToast(null), 3500);
+    }
+  };
+
+  const handleSelectDetectedGroup = (group: TelegramDetectedChat) => {
+    handleTouchSession();
+    setTgChatId(group.chatId);
+    const updated: TelegramConfig = {
+      ...telegramConfig,
+      botToken: tgBotToken.trim(),
+      chatId: group.chatId,
+      chatTitle: group.title,
+      chatType: group.type,
+      enabled: tgEnabled,
+      notifyOnNewOrder: tgNotifyNewOrder,
+      notifyOnStatusUpdate: tgNotifyStatusUpdate,
+      lastStatus: `Connected Group: ${group.title} (${group.chatId})`,
+    };
+    storageService.saveTelegramConfig(updated);
+    setTelegramConfig(updated);
+    const msg =
+      language === 'km'
+        ? `✅ បានជ្រើសរើស Telegram Group «${group.title}» (${group.chatId}) រួចរាល់!`
+        : `✅ Selected Telegram Group "${group.title}" (${group.chatId})!`;
+    setTelegramFeedback({ success: true, message: msg });
+    setSettingsSavedToast(msg);
+    setTimeout(() => setSettingsSavedToast(null), 3500);
+  };
+
+  const handleTestTelegramConnection = async () => {
+    handleTouchSession();
+    setIsTestingTelegram(true);
+    setTelegramFeedback(null);
+    const normalizedId = storageService.normalizeGroupChatId(tgChatId);
+    setTgChatId(normalizedId);
+
+    const updated: TelegramConfig = {
+      ...telegramConfig,
+      botToken: tgBotToken.trim(),
+      chatId: normalizedId,
+      enabled: tgEnabled,
+      notifyOnNewOrder: tgNotifyNewOrder,
+      notifyOnStatusUpdate: tgNotifyStatusUpdate,
+    };
+    storageService.saveTelegramConfig(updated);
+    setTelegramConfig(updated);
+
+    const res = await storageService.testTelegramConnection(tgBotToken.trim(), normalizedId);
+    setIsTestingTelegram(false);
+    setTelegramFeedback(res);
+    setTelegramConfig(storageService.getTelegramConfig());
+    if (res.success) {
+      setSettingsSavedToast(res.message);
+      setTimeout(() => setSettingsSavedToast(null), 3500);
+    }
+  };
+
+  const handleSendPeriodicReportToTelegram = async (period: ReportPeriod) => {
+    handleTouchSession();
+    if (!tgBotToken.trim() || !tgChatId.trim()) {
+      const warnMsg =
+        language === 'km'
+          ? '⚠️ សូមបញ្ចូល Telegram Bot Token និង Chat ID ក្នុងផ្ទាំង «Sheets & Telegram» ជាមុនសិន!'
+          : '⚠️ Please configure your Telegram Bot Token and Chat ID in the Sheets & Telegram tab first!';
+      setTelegramFeedback({ success: false, message: warnMsg });
+      setSettingsSavedToast(warnMsg);
+      setTimeout(() => setSettingsSavedToast(null), 4000);
+      setAdminTab('sheets');
+      return;
+    }
+
+    setIsSendingReport(period);
+    setTelegramFeedback(null);
+    const res = await storageService.sendPeriodicTelegramReport(period);
+    setIsSendingReport(null);
+    setTelegramConfig(storageService.getTelegramConfig());
+
+    const periodNamesKm: Record<ReportPeriod, string> = {
+      weekly: 'ប្រចាំសប្តាហ៍',
+      monthly: 'ប្រចាំខែ',
+      yearly: 'ប្រចាំឆ្នាំ',
+    };
+    const toastMsg = res.success
+      ? language === 'km'
+        ? `✅ បានផ្ញើរបាយការណ៍${periodNamesKm[period]} (${res.report.totalOrders} ការកម្មង់ · ¥${res.report.activeRevenueJPY.toLocaleString()}) ទៅ Telegram ដោយជោគជ័យ!`
+        : `✅ Sent ${period} report (${res.report.totalOrders} orders · ¥${res.report.activeRevenueJPY.toLocaleString()}) to Telegram!`
+      : `❌ ${res.message}`;
+
+    setTelegramFeedback({ success: res.success, message: toastMsg });
+    setSettingsSavedToast(toastMsg);
+    setTimeout(() => setSettingsSavedToast(null), 4000);
+  };
+
+  const handleSendOrderToTelegram = async (order: Order) => {
+    handleTouchSession();
+    if (!tgBotToken.trim() || !tgChatId.trim()) {
+      const warnMsg =
+        language === 'km'
+          ? '⚠️ សូមបញ្ចូល Telegram Bot Token និង Chat ID ក្នុងផ្ទាំង «Sheets & Telegram» ជាមុនសិន!'
+          : '⚠️ Please configure Telegram Bot Token and Chat ID first!';
+      setSettingsSavedToast(warnMsg);
+      setTimeout(() => setSettingsSavedToast(null), 4000);
+      setAdminTab('sheets');
+      return;
+    }
+
+    setIsSendingOrderTelegramId(order.id);
+    const res = await storageService.sendOrderTelegramNotification(order, false);
+    setIsSendingOrderTelegramId(null);
+    setTelegramConfig(storageService.getTelegramConfig());
+
+    const toastMsg = res.success
+      ? language === 'km'
+        ? `✅ បានផ្ញើព័ត៌មានការកម្មង់លេខ «${order.id}» ទៅ Telegram ដោយជោគជ័យ!`
+        : `✅ Sent order ${order.id} notification to Telegram!`
+      : `❌ ${res.message}`;
+    setSettingsSavedToast(toastMsg);
+    setTimeout(() => setSettingsSavedToast(null), 3500);
+  };
+
   // FILTERED ORDERS
   const filteredOrders = orders.filter((o) => {
     const q = orderSearchQuery.toLowerCase().trim();
@@ -818,6 +1021,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     return matchesSearch && matchesStatus && matchesType;
   });
+
+  const isOrderFilterActive =
+    orderSearchQuery.trim() !== '' || orderStatusFilter !== 'all' || orderTypeFilter !== 'all';
+
+  const filteredRevenueJPY = filteredOrders.reduce(
+    (sum, o) => (o.status !== 'cancelled' ? sum + o.totalJPY : sum),
+    0
+  );
+
+  const handleDownloadOrdersCSV = (ordersToExport: Order[] = filteredOrders, suffix?: string) => {
+    handleTouchSession();
+    const count = storageService.exportOrdersToCSV(ordersToExport, suffix);
+    if (count > 0) {
+      setSettingsSavedToast(
+        language === 'km'
+          ? `✅ បានទាញយកឯកសារ CSV ចំនួន ${count} ការកម្មង់ សម្រាប់គណនេយ្យ និងការដឹកជញ្ជូន!`
+          : `✅ Downloaded CSV with ${count} order(s) for accounting & fulfillment!`
+      );
+      setTimeout(() => setSettingsSavedToast(null), 3500);
+    }
+  };
+
+  // ORDER STATUS VISUAL BADGE HELPER (READ-ONLY COLOR-CODED PILL WITH ICON & BILINGUAL LABEL)
+  const renderOrderStatusBadge = (status: OrderStatus, size: 'sm' | 'md' = 'md') => {
+    const config: Record<
+      OrderStatus,
+      {
+        labelKm: string;
+        labelEn: string;
+        badgeClasses: string;
+        iconClasses: string;
+        Icon: React.ElementType;
+      }
+    > = {
+      new: {
+        labelKm: 'ថ្មី · រង់ចាំ (Pending)',
+        labelEn: 'Pending (New)',
+        badgeClasses: 'bg-amber-50 text-amber-800 border-amber-200',
+        iconClasses: 'text-amber-600',
+        Icon: Clock,
+      },
+      confirmed: {
+        labelKm: 'បានបញ្ជាក់ (Confirmed)',
+        labelEn: 'Confirmed',
+        badgeClasses: 'bg-blue-50 text-blue-800 border-blue-200',
+        iconClasses: 'text-blue-600',
+        Icon: CheckCircle2,
+      },
+      processing: {
+        labelKm: 'កំពុងរៀបចំ (Processing)',
+        labelEn: 'Processing',
+        badgeClasses: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+        iconClasses: 'text-indigo-600',
+        Icon: Package,
+      },
+      shipping: {
+        labelKm: 'កំពុងដឹកជញ្ជូន (Shipping)',
+        labelEn: 'Shipping',
+        badgeClasses: 'bg-purple-50 text-purple-800 border-purple-200',
+        iconClasses: 'text-purple-600',
+        Icon: Truck,
+      },
+      completed: {
+        labelKm: 'បានបញ្ចប់ (Completed)',
+        labelEn: 'Completed',
+        badgeClasses: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        iconClasses: 'text-emerald-600',
+        Icon: Check,
+      },
+      cancelled: {
+        labelKm: 'បានបោះបង់ (Cancelled)',
+        labelEn: 'Cancelled',
+        badgeClasses: 'bg-rose-50 text-rose-800 border-rose-200',
+        iconClasses: 'text-rose-600',
+        Icon: XCircle,
+      },
+    };
+
+    const meta = config[status] || config.new;
+    const StatusIcon = meta.Icon;
+    const sizeClasses =
+      size === 'sm'
+        ? 'px-2 py-0.5 text-[10px] gap-1'
+        : 'px-2.5 py-1 text-[11px] gap-1.5';
+    const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5';
+
+    return (
+      <span
+        className={`inline-flex items-center font-bold rounded-full border whitespace-nowrap shrink-0 ${sizeClasses} ${meta.badgeClasses}`}
+      >
+        <StatusIcon className={`${iconSize} shrink-0 ${meta.iconClasses}`} />
+        <span>{language === 'km' ? meta.labelKm : meta.labelEn}</span>
+      </span>
+    );
+  };
 
   // KPI STATS
   const totalOrdersCount = orders.length;
@@ -1077,7 +1375,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
-          <span>Google Sheets Sync</span>
+          <span>{language === 'km' ? 'Sheets & Telegram' : 'Sheets & Telegram'}</span>
         </button>
 
         <button
@@ -1092,6 +1390,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span>{language === 'km' ? 'ព័ត៌មានគេហទំព័រ (Settings)' : 'Site & Web App'}</span>
         </button>
       </div>
+
+      {/* Global Toast Notification for Orders / Products / CSV Exports */}
+      {settingsSavedToast && adminTab !== 'settings' && (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-bold">{settingsSavedToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSettingsSavedToast(null)}
+            className="text-emerald-600 hover:text-emerald-800 px-1.5 py-0.5 rounded cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* TAB 1: OVERVIEW KPIS */}
       {adminTab === 'overview' && (
@@ -1159,14 +1474,261 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+          {/* Periodic Sales Reports (Weekly / Monthly / Yearly) & Telegram Dispatch */}
+          {(() => {
+            const currentReport = storageService.generateSalesReport(selectedReportPeriod);
+            const isTgConfigured = Boolean(tgBotToken.trim() && tgChatId.trim());
+
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-5">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-gojapan-600" />
+                      <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                        {language === 'km'
+                          ? 'របាយការណ៍លក់ប្រចាំសប្តាហ៍ ខែ និងឆ្នាំ (Telegram Reports)'
+                          : 'Weekly, Monthly & Yearly Sales Reports (Telegram)'}
+                      </h3>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          isTgConfigured && tgEnabled
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}
+                      >
+                        {isTgConfigured && tgEnabled
+                          ? language === 'km'
+                            ? 'Telegram Bot បានភ្ជាប់'
+                            : 'Telegram Bot Active'
+                          : language === 'km'
+                          ? 'មិនទាន់ភ្ជាប់ Telegram Bot'
+                          : 'Telegram Bot Unconfigured'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {language === 'km'
+                        ? 'មើលស្ថិតិលក់ និងផ្ញើរបាយការណ៍សង្ខេបប្រចាំសប្តាហ៍ ប្រចាំខែ ឬប្រចាំឆ្នាំ ទៅកាន់ Telegram របស់អ្នកដោយផ្ទាល់'
+                        : 'Inspect periodic sales performance and dispatch Weekly, Monthly, or Yearly summary reports directly to Telegram.'}
+                    </p>
+                  </div>
+
+                  {/* Period Selector Tabs */}
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg self-start lg:self-auto">
+                    {(
+                      [
+                        { id: 'weekly', km: 'ប្រចាំសប្តាហ៍ (Weekly)', en: 'Weekly' },
+                        { id: 'monthly', km: 'ប្រចាំខែ (Monthly)', en: 'Monthly' },
+                        { id: 'yearly', km: 'ប្រចាំឆ្នាំ (Yearly)', en: 'Yearly' },
+                      ] as { id: ReportPeriod; km: string; en: string }[]
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedReportPeriod(tab.id)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                          selectedReportPeriod === tab.id
+                            ? 'bg-white text-slate-900 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {language === 'km' ? tab.km : tab.en}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Selected Period KPI Summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-gojapan-600" />
+                      <span>{language === 'km' ? currentReport.periodLabelKm : currentReport.periodLabelEn}</span>
+                    </span>
+                    <p className="text-xs font-mono font-bold text-slate-800">{currentReport.dateRangeLabel}</p>
+                    <span className="text-[11px] text-slate-500 block">
+                      {language === 'km' ? 'ចន្លោះកាលបរិច្ឆេទរបាយការណ៍' : 'Report Date Window'}
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {language === 'km' ? 'ចំណូលសរុបក្នុងកាលបរិច្ឆេទនេះ' : 'Period Active Revenue'}
+                    </span>
+                    <p className="text-xl font-black text-gojapan-600 font-mono tabular-nums">
+                      ¥{currentReport.activeRevenueJPY.toLocaleString()} <span className="text-xs font-normal text-slate-500">JPY</span>
+                    </p>
+                    <span className="text-[11px] text-slate-500 block font-mono">
+                      Shipping: ¥{currentReport.totalShippingJPY.toLocaleString()} JPY
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {language === 'km' ? 'ចំនួនការកម្មង់សរុប' : 'Period Total Orders'}
+                    </span>
+                    <p className="text-xl font-black text-slate-900 font-mono tabular-nums">
+                      {currentReport.totalOrders}
+                    </p>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                      <span>{currentReport.customerOrdersCount} Customers</span>
+                      <span>·</span>
+                      <span className="text-gojapan-600 font-bold">{currentReport.agentOrdersCount} Agents</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {language === 'km' ? 'ស្ថានភាពការកម្មង់ក្នុងគ្រានេះ' : 'Fulfillment Progress'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] font-mono font-bold">
+                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                        Pending: {currentReport.statusCounts.new}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        Done: {currentReport.statusCounts.completed}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                        Cancel: {currentReport.statusCounts.cancelled}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Selling Products in Period */}
+                {currentReport.topProducts.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                      {language === 'km'
+                        ? '🏆 ផលិតផលលក់ដាច់បំផុតក្នុងកាលបរិច្ឆេទនេះ (Top Selling Items)'
+                        : '🏆 Top Selling Products in Selected Period'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {currentReport.topProducts.map((tp, idx) => (
+                        <div
+                          key={tp.sku}
+                          className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block truncate">
+                              {idx + 1}. {tp.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">{tp.sku}</span>
+                          </div>
+                          <div className="text-right shrink-0 font-mono">
+                            <span className="font-bold text-gojapan-600 block">
+                              ¥{tp.revenueJPY.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{tp.quantity} sold</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 1-Click Send Reports to Telegram Bar */}
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isSendingReport !== null}
+                      onClick={() => handleSendPeriodicReportToTelegram('weekly')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        {isSendingReport === 'weekly'
+                          ? language === 'km'
+                            ? 'កំពុងផ្ញើ...'
+                            : 'Sending...'
+                          : language === 'km'
+                          ? 'ផ្ញើរបាយការណ៍ប្រចាំសប្តាហ៍ទៅ Telegram'
+                          : 'Send Weekly Report to Telegram'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSendingReport !== null}
+                      onClick={() => handleSendPeriodicReportToTelegram('monthly')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        {isSendingReport === 'monthly'
+                          ? language === 'km'
+                            ? 'កំពុងផ្ញើ...'
+                            : 'Sending...'
+                          : language === 'km'
+                          ? 'ផ្ញើរបាយការណ៍ប្រចាំខែទៅ Telegram'
+                          : 'Send Monthly Report to Telegram'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSendingReport !== null}
+                      onClick={() => handleSendPeriodicReportToTelegram('yearly')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        {isSendingReport === 'yearly'
+                          ? language === 'km'
+                            ? 'កំពុងផ្ញើ...'
+                            : 'Sending...'
+                          : language === 'km'
+                          ? 'ផ្ញើរបាយការណ៍ប្រចាំឆ្នាំទៅ Telegram'
+                          : 'Send Yearly Report to Telegram'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={currentReport.orders.length === 0}
+                      onClick={() =>
+                        handleDownloadOrdersCSV(
+                          currentReport.orders,
+                          `${selectedReportPeriod.toUpperCase()}_Report`
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>
+                        {language === 'km'
+                          ? `ទាញយក CSV (${currentReport.orders.length})`
+                          : `Download ${selectedReportPeriod} CSV (${currentReport.orders.length})`}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('sheets')}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Bell className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{language === 'km' ? 'កំណត់ Telegram Bot' : 'Configure Telegram Bot'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={() => storageService.exportOrdersToCSV()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+              type="button"
+              onClick={() => handleDownloadOrdersCSV(orders, 'All')}
+              disabled={orders.length === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
             >
-              <Download className="w-4 h-4" />
-              <span>Export All Orders (CSV)</span>
+              <Download className="w-4 h-4 text-emerald-600" />
+              <span>Download CSV ({orders.length} Orders)</span>
             </button>
 
             <button
@@ -1174,7 +1736,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gojapan-700 bg-gojapan-50 hover:bg-gojapan-100 border border-gojapan-200 rounded-lg transition-colors cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Configure Google Sheets API</span>
+              <span>{language === 'km' ? 'កំណត់ Google Sheets & Telegram Bot' : 'Configure Google Sheets & Telegram Bot'}</span>
             </button>
           </div>
         </div>
@@ -1205,7 +1767,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white"
               >
                 <option value="all">All Statuses</option>
-                <option value="new">New</option>
+                <option value="new">Pending (New)</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="processing">Processing</option>
                 <option value="shipping">Shipping</option>
@@ -1225,7 +1787,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleOpenCreateOrder}
@@ -1248,17 +1810,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => storageService.exportOrdersToCSV()}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                type="button"
+                onClick={() =>
+                  handleDownloadOrdersCSV(
+                    filteredOrders,
+                    isOrderFilterActive ? 'Filtered' : 'All'
+                  )
+                }
+                disabled={filteredOrders.length === 0}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                title={
+                  language === 'km'
+                    ? 'ទាញយកទិន្នន័យការកម្មង់ជា CSV សម្រាប់គណនេយ្យ និងការរៀបចំដឹកជញ្ជូន'
+                    : 'Download customer orders as CSV for accounting and fulfillment'
+                }
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export CSV / Excel</span>
+                <span>Download CSV</span>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-200/70 text-emerald-900">
+                  {filteredOrders.length}
+                </span>
               </button>
             </div>
           </div>
 
           {/* Orders Data Table */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            {/* Order List Header Bar with Accounting Summary & Quick Download CSV */}
+            <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-bold text-slate-800">
+                  {language === 'km' ? 'បញ្ជីការកម្មង់អតិថិជន (Order List)' : 'Customer Order List'}
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-600 font-medium">
+                  {language === 'km' ? 'បង្ហាញ' : 'Showing'}{' '}
+                  <strong className="font-mono text-slate-900">{filteredOrders.length}</strong>{' '}
+                  {isOrderFilterActive ? `of ${orders.length}` : ''}{' '}
+                  {language === 'km' ? 'ការកម្មង់' : 'orders'}
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-600 font-medium">
+                  {language === 'km' ? 'សរុបទឹកប្រាក់ (Active):' : 'Active Value:'}{' '}
+                  <strong className="font-mono text-gojapan-600">¥{filteredRevenueJPY.toLocaleString()} JPY</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {isOrderFilterActive && orders.length > filteredOrders.length && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadOrdersCSV(orders, 'All')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors cursor-pointer"
+                    title="Export all orders ignoring current filter"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>{language === 'km' ? `ទាញយកទាំងអស់ (${orders.length})` : `Export All (${orders.length})`}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleDownloadOrdersCSV(
+                      filteredOrders,
+                      isOrderFilterActive ? 'Filtered' : 'Accounting_Fulfillment'
+                    )
+                  }
+                  disabled={filteredOrders.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Download CSV for Accounting & Fulfillment"
+                >
+                  <Download className="w-3 h-3 text-emerald-600" />
+                  <span>{language === 'km' ? 'ទាញយក CSV (Download CSV)' : 'Download CSV'}</span>
+                </button>
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-xs border-collapse">
                 <thead>
@@ -1306,18 +1933,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           ¥{o.totalJPY.toLocaleString()}
                         </td>
                         <td className="py-3 px-4">
-                          <select
-                            value={o.status}
-                            onChange={(e) => handleUpdateStatus(o.id, e.target.value as OrderStatus)}
-                            className="text-xs px-2 py-1 rounded border border-slate-300 bg-white font-medium focus:ring-1 focus:ring-gojapan-500"
-                          >
-                            <option value="new">New</option>
-                            <option value="confirmed">Confirmed</option>
-                            <option value="processing">Processing</option>
-                            <option value="shipping">Shipping</option>
-                            <option value="completed">Completed</option>
-                            <option value="cancelled">Cancelled</option>
-                          </select>
+                          {renderOrderStatusBadge(o.status)}
                         </td>
                         <td className="py-3 px-4 text-center">
                           {o.syncedToGoogleSheets ? (
@@ -1330,7 +1946,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right space-x-2">
+                        <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={isSendingOrderTelegramId === o.id}
+                            onClick={() => handleSendOrderToTelegram(o)}
+                            className="p-1 text-sky-600 hover:text-sky-800 hover:bg-sky-50 rounded cursor-pointer disabled:opacity-40"
+                            title={language === 'km' ? 'ផ្ញើព័ត៌មានការកម្មង់នេះទៅ Telegram' : 'Send Order Alert to Telegram'}
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => handleOpenEditOrder(o)}
                             className="p-1 text-slate-600 hover:text-gojapan-600 cursor-pointer"
@@ -1591,10 +2216,349 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: GOOGLE SHEETS LIVE SYNC CONSOLE */}
+      {/* TAB 5: GOOGLE SHEETS & TELEGRAM BOT LIVE SYNC CONSOLE */}
       {adminTab === 'sheets' && (
         <div className="space-y-6 animate-in fade-in duration-200">
-          
+          {/* TELEGRAM BOT CONFIGURATION & PERIODIC REPORTS CARD */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-sky-50 text-sky-600">
+                  <Send className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">
+                      {language === 'km'
+                        ? 'ប្រព័ន្ធជូនដំណឹងចូល Telegram Group ពេលមានការកម្មង់ & របាយការណ៍លក់'
+                        : 'Telegram Group Order Notifications & Periodic Reports'}
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                        tgBotToken.trim() && (tgChatId.trim().startsWith('-') || tgChatId.trim().startsWith('@')) && tgEnabled
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}
+                    >
+                      {tgBotToken.trim() && (tgChatId.trim().startsWith('-') || tgChatId.trim().startsWith('@')) && tgEnabled
+                        ? language === 'km'
+                          ? `👥 ភ្ជាប់ Group រួចរាល់ (${telegramConfig.chatTitle || tgChatId.trim()})`
+                          : `👥 Group Active (${telegramConfig.chatTitle || tgChatId.trim()})`
+                        : language === 'km'
+                        ? 'សូមភ្ជាប់ទៅកាន់ Group'
+                        : 'Group Setup Required'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {language === 'km'
+                      ? 'ផ្ញើសារជូនដំណឹងភ្លាមៗចូលទៅក្នុង Telegram Group របស់ក្រុមការងាររាល់ពេលមានការកម្មង់ថ្មី និងផ្ញើរបាយការណ៍ប្រចាំសប្តាហ៍ ខែ និងឆ្នាំចូល Group'
+                      : 'Automatically send instant order notifications and Weekly, Monthly, and Yearly sales reports directly into your team Telegram Group.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning banner if current chatId is a positive private chat ID instead of a negative Group ID */}
+            {tgChatId.trim() && !tgChatId.trim().startsWith('-') && !tgChatId.trim().startsWith('@') && !/^100\d{9,}$/.test(tgChatId.trim()) && (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold">
+                      {language === 'km'
+                        ? `⚠️ លេខសម្គាល់បច្ចុប្បន្ន (${tgChatId}) គឺជាឆាតផ្ទាល់ខ្លួនជាមួយ Bot (Private Chat) មិនមែន Telegram Group ទេ!`
+                        : `⚠️ Current ID (${tgChatId}) is a Private Bot Chat, not a Telegram Group!`}
+                    </p>
+                    <p className="text-amber-800">
+                      {language === 'km'
+                        ? 'សូមបញ្ចូល Bot ទៅក្នុង Telegram Group របស់អ្នក → វាយសារ "/start" នៅក្នុង Group → រួចចុចប៊ូតុង «🔍 ទាញយក Group ID» ដើម្បីឱ្យប្រព័ន្ធផ្ញើសារចូល Group (Group ID ត្រូវផ្តើមដោយសញ្ញាដក "-" ដូចជា -100...)។'
+                        : 'Add your Bot to your Telegram Group, send "/start" inside the Group, then click "Detect Group ID" so messages go to the Group (Group IDs start with "-").'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isDetectingChatId || !tgBotToken.trim()}
+                  onClick={handleDetectTelegramChatId}
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs whitespace-nowrap cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {language === 'km' ? '🔍 ប្តូរទៅ Group ID ឥឡូវនេះ' : '🔍 Switch to Group ID Now'}
+                </button>
+              </div>
+            )}
+
+            {/* Bot Token & Group Chat ID Inputs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="block font-bold text-slate-800">
+                  {language === 'km' ? '១. Telegram Bot Token (ពី @BotFather):' : '1. Telegram Bot Token (from @BotFather):'}
+                </label>
+                <input
+                  type="text"
+                  value={tgBotToken}
+                  onChange={(e) => setTgBotToken(e.target.value)}
+                  placeholder="1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+                />
+                <span className="text-[11px] text-slate-500 block">
+                  {language === 'km'
+                    ? 'យក HTTP API Token ពី @BotFather រួចបញ្ចូល Bot នោះទៅក្នុង Telegram Group របស់អ្នក។'
+                    : 'Paste the HTTP API Token from @BotFather and add that Bot into your Telegram Group.'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-bold text-slate-800">
+                  {language === 'km'
+                    ? '២. Telegram Group ID (លេខសម្គាល់ Group — ផ្តើមដោយ "-"):'
+                    : '2. Telegram Group Chat ID (Starts with "-"): '}
+                </label>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="text"
+                    value={tgChatId}
+                    onChange={(e) => setTgChatId(e.target.value)}
+                    placeholder="e.g. -1001234567890 or -987654321"
+                    className="flex-1 px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={isDetectingChatId || !tgBotToken.trim()}
+                    onClick={handleDetectTelegramChatId}
+                    className="px-3.5 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 shadow-2xs"
+                    title="Send /start inside your Telegram Group first, then click to auto-detect the Group ID"
+                  >
+                    {isDetectingChatId
+                      ? language === 'km'
+                        ? 'កំពុងស្វែងរក Group...'
+                        : 'Detecting Group...'
+                      : language === 'km'
+                      ? '🔍 ទាញយក Group ID'
+                      : '🔍 Detect Group ID'}
+                  </button>
+                </div>
+                <span className="text-[11px] text-slate-500 block">
+                  {language === 'km'
+                    ? 'វាយសារ "/start" នៅក្នុង Telegram Group រួចចុចប៊ូតុង «🔍 ទាញយក Group ID» ដើម្បីចាប់យកលេខ Group ID (ឧ. -100...) ដោយស្វ័យប្រវត្តិ!'
+                    : 'Send "/start" inside your Telegram Group, then click "Detect Group ID" to fill your Group ID (-100...) automatically.'}
+                </span>
+              </div>
+            </div>
+
+            {/* Detected Telegram Groups Selector (if 1 or more Groups found) */}
+            {detectedGroups.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-sky-50/80 border border-sky-200 space-y-2 text-xs">
+                <span className="font-bold text-sky-900 block">
+                  {language === 'km'
+                    ? `👥 រកឃើញ Telegram Group ចំនួន ${detectedGroups.length} (ចុចជ្រើសរើស Group ដែលចង់ឱ្យផ្ញើសារចូល)៖`
+                    : `👥 Found ${detectedGroups.length} Telegram Group(s) (Click to select target Group):`}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {detectedGroups.map((grp) => {
+                    const isSelected = tgChatId.trim() === grp.chatId;
+                    return (
+                      <button
+                        key={grp.chatId}
+                        type="button"
+                        onClick={() => handleSelectDetectedGroup(grp)}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
+                            : 'bg-white text-slate-700 border-sky-200 hover:bg-sky-100'
+                        }`}
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{grp.title}</span>
+                        <code className={`text-[10px] px-1.5 py-0.5 rounded ${isSelected ? 'bg-sky-700 text-sky-100' : 'bg-slate-100 text-slate-600'}`}>
+                          {grp.chatId}
+                        </code>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Step-by-Step Guide to Connect Telegram Group */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+              <p className="font-bold text-slate-800">
+                {language === 'km'
+                  ? '📌 របៀបភ្ជាប់ឱ្យ Bot ផ្ញើសារចូលទៅក្នុង Telegram Group (មិនមែនឆាតផ្ទាល់ខ្លួន)៖'
+                  : '📌 How to connect your Bot to send notifications into a Telegram Group:'}
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-600">
+                <li>
+                  {language === 'km'
+                    ? 'បើក Telegram Group របស់អ្នក → ចុច Add Members → ស្វែងរកឈ្មោះ Bot របស់អ្នក រួចបញ្ចូលទៅក្នុង Group (និងដំឡើង Bot ជា Admin ក្នុង Group)។'
+                    : 'Open your Telegram Group → Add Members → search for your Bot and add it to the Group (promote the Bot to Admin).'}
+                </li>
+                <li>
+                  {language === 'km'
+                    ? 'នៅក្នុង Telegram Group នោះ សូមវាយសារ "/start" ឬ "/test" (ត្រូវមានសញ្ញា "/" នៅខាងមុខ ដើម្បីឱ្យ Bot មើលឃើញសារក្នុង Group)។'
+                    : 'Inside that Telegram Group, send the message "/start" or "/test" (must start with "/" so the Bot receives the group update).'}
+                </li>
+                <li>
+                  {language === 'km'
+                    ? 'ត្រឡប់មកទីនេះ រួចចុចប៊ូតុង «🔍 ទាញយក Group ID» នោះប្រព័ន្ធនឹងចាប់យកលេខសម្គាល់ Group (ផ្តើមដោយសញ្ញាដក "-" ដូចជា -100...) និងរក្សាទុកដោយស្វ័យប្រវត្តិ!'
+                    : 'Click "🔍 Detect Group ID" above — it will automatically grab your Group ID (starts with "-" like -100...) and save it!'}
+                </li>
+              </ol>
+            </div>
+
+            {/* Notification Preferences Checkboxes */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={tgEnabled}
+                  onChange={(e) => setTgEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
+                />
+                <span>
+                  {language === 'km'
+                    ? 'បើកដំណើរការជូនដំណឹង Telegram'
+                    : 'Enable Telegram Notifications'}
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={tgNotifyNewOrder}
+                  onChange={(e) => setTgNotifyNewOrder(e.target.checked)}
+                  className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
+                />
+                <span>
+                  {language === 'km'
+                    ? 'ជូនដំណឹងរាល់ពេលមានការកម្មង់ថ្មីៗ'
+                    : 'Alert on Every New Order'}
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={tgNotifyStatusUpdate}
+                  onChange={(e) => setTgNotifyStatusUpdate(e.target.checked)}
+                  className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
+                />
+                <span>
+                  {language === 'km'
+                    ? 'ជូនដំណឹងពេលប្តូរស្ថានភាពការកម្មង់'
+                    : 'Alert on Order Status Changes'}
+                </span>
+              </label>
+            </div>
+
+            {/* Save & Test Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveTelegramSettings}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'រក្សាទុកការកំណត់ Telegram' : 'Save Telegram Config'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isTestingTelegram || !tgBotToken.trim() || !tgChatId.trim()}
+                  onClick={handleTestTelegramConnection}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isTestingTelegram ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>{language === 'km' ? 'កំពុងផ្ញើសារតេស្ត...' : 'Sending Test...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>{language === 'km' ? 'សាកល្បងផ្ញើសារតេស្ត (Test Alert)' : 'Send Test Notification'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {telegramConfig.lastNotifiedAt && (
+                <span className="text-[11px] text-slate-500 font-mono">
+                  Last sent: {new Date(telegramConfig.lastNotifiedAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+
+            {/* Telegram Feedback Banner */}
+            {telegramFeedback && (
+              <div
+                className={`p-3.5 rounded-xl text-xs flex items-start gap-2.5 ${
+                  telegramFeedback.success
+                    ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-900 border border-amber-200'
+                }`}
+              >
+                {telegramFeedback.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                )}
+                <span className="font-semibold">{telegramFeedback.message}</span>
+              </div>
+            )}
+
+            {/* Periodic Report Dispatch Section (Weekly, Monthly, Yearly) */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-gojapan-600" />
+                  <span>
+                    {language === 'km'
+                      ? 'ផ្ញើរបាយការណ៍លក់ទៅកាន់ Telegram (ប្រចាំសប្តាហ៍ / ខែ / ឆ្នាំ)'
+                      : 'Dispatch Sales Reports to Telegram (Weekly / Monthly / Yearly)'}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {language === 'km'
+                    ? 'ចុចប៊ូតុងខាងស្តាំដើម្បីបូកសរុបទិន្នន័យការកម្មង់ ចំណូល និងផលិតផលលក់ដាច់ រួចផ្ញើចូល Telegram ភ្លាមៗ'
+                    : 'Click below to compile order counts, revenue in JPY, status breakdown, and top products and send directly to Telegram.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={isSendingReport !== null}
+                  onClick={() => handleSendPeriodicReportToTelegram('weekly')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'របាយការណ៍ប្រចាំសប្តាហ៍' : 'Weekly Report'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSendingReport !== null}
+                  onClick={() => handleSendPeriodicReportToTelegram('monthly')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'របាយការណ៍ប្រចាំខែ' : 'Monthly Report'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSendingReport !== null}
+                  onClick={() => handleSendPeriodicReportToTelegram('yearly')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gojapan-700 bg-gojapan-50 hover:bg-gojapan-100 border border-gojapan-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'របាយការណ៍ប្រចាំឆ្នាំ' : 'Yearly Report'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div className="flex items-center gap-3">
@@ -2470,8 +3434,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div>
-                <span className="text-xs font-mono font-bold text-gojapan-600">{selectedOrderDetails.id}</span>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-gojapan-600">{selectedOrderDetails.id}</span>
+                  {renderOrderStatusBadge(selectedOrderDetails.status, 'sm')}
+                </div>
                 <h3 className="text-base font-bold text-slate-900">Order Information</h3>
               </div>
               <button
@@ -2509,14 +3476,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </strong>
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                     {selectedOrderDetails.statusHistory.map((h, hIdx) => (
-                      <div key={hIdx} className="p-1.5 rounded bg-slate-50 border border-slate-200 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800 uppercase text-[10px]">{h.status}</span>
+                      <div key={hIdx} className="p-2 rounded bg-slate-50 border border-slate-200 text-[11px]">
+                        <div className="flex items-center justify-between gap-2">
+                          {renderOrderStatusBadge(h.status, 'sm')}
                           <span className="text-slate-400 font-mono text-[10px]">
                             {new Date(h.timestamp).toLocaleString()}
                           </span>
                         </div>
-                        <p className="text-slate-600 text-[10px] mt-0.5">
+                        <p className="text-slate-600 text-[10px] mt-1">
                           {language === 'km' ? (h.noteKm || h.noteEn) : (h.noteEn || h.noteKm)}
                         </p>
                       </div>
@@ -2531,24 +3498,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => setSelectedOrderDetails(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  const o = selectedOrderDetails;
-                  setSelectedOrderDetails(null);
-                  handleOpenEditOrder(o);
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg shadow-sm shadow-gojapan-500/20 cursor-pointer"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>{language === 'km' ? 'កែប្រែការកម្មង់' : 'Edit Order'}</span>
-              </button>
+            <div className="pt-3 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadOrdersCSV([selectedOrderDetails], selectedOrderDetails.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSendingOrderTelegramId === selectedOrderDetails.id}
+                  onClick={() => handleSendOrderToTelegram(selectedOrderDetails)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'ផ្ញើទៅ Telegram' : 'Send to Telegram'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedOrderDetails(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    const o = selectedOrderDetails;
+                    setSelectedOrderDetails(null);
+                    handleOpenEditOrder(o);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gojapan-500 hover:bg-gojapan-600 rounded-lg shadow-sm shadow-gojapan-500/20 cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>{language === 'km' ? 'កែប្រែការកម្មង់' : 'Edit Order'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2951,13 +3941,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* Status & Financials */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3 bg-slate-50 rounded-xl space-y-2 border border-slate-200">
-                  <label className="block font-bold text-slate-800">Order Status</label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block font-bold text-slate-800">Order Status</label>
+                    {renderOrderStatusBadge(editingOrder.status, 'sm')}
+                  </div>
                   <select
                     value={editingOrder.status}
                     onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value as any })}
                     className="w-full px-2.5 py-1.5 rounded border border-slate-300 bg-white font-bold"
                   >
-                    <option value="new">New (ថ្មី)</option>
+                    <option value="new">Pending / New (ថ្មី · រង់ចាំ)</option>
                     <option value="confirmed">Confirmed (បានបញ្ជាក់)</option>
                     <option value="processing">Processing (កំពុងរៀបចំ)</option>
                     <option value="shipping">Shipping (កំពុងដឹកជញ្ជូន)</option>

@@ -1,10 +1,11 @@
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
-import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, NewsTickerItem, Order, OrderStatus, Product, SiteSettings } from '../types';
+import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, NewsTickerItem, Order, OrderStatus, Product, ReportPeriod, SalesReportSummary, SiteSettings, TelegramConfig, TelegramDetectedChat } from '../types';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'gojapan_products_v1',
   ORDERS: 'gojapan_orders_v1',
   APPS_SCRIPT: 'gojapan_apps_script_v1',
+  TELEGRAM_CONFIG: 'gojapan_telegram_config_v1',
   ADMIN_AUTH: 'gojapan_admin_session_v1',
   ADMIN_AUTH_EXPIRES: 'gojapan_admin_session_expires_v1',
   SITE_SETTINGS: 'gojapan_site_settings_v1',
@@ -440,6 +441,12 @@ export const storageService = {
     }
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
 
+    // Automatically notify Telegram when a new order is placed
+    const tgConfig = this.getTelegramConfig();
+    if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
+      this.sendOrderTelegramNotification(finalOrder, existingIndex < 0).catch(() => {});
+    }
+
     return { order: finalOrder, synced, error: syncError };
   },
 
@@ -533,12 +540,19 @@ export const storageService = {
       }
     }
 
+    // Also notify Telegram if status notification is enabled
+    const tgConfig = this.getTelegramConfig();
+    if (tgConfig.enabled && tgConfig.notifyOnStatusUpdate && tgConfig.botToken && tgConfig.chatId) {
+      this.sendOrderStatusTelegramNotification(order, status, customNoteKm || customNoteEn || defNote.km).catch(() => {});
+    }
+
     return true;
   },
 
   updateOrder(updated: Order): Order {
     const orders = this.getOrders();
     const idx = orders.findIndex((o) => o.id === updated.id);
+    const previousStatus = idx >= 0 ? orders[idx].status : undefined;
     const subtotal = updated.items.reduce((sum, it) => sum + (it.unitPriceJPY * it.quantity), 0);
     const finalOrder: Order = {
       ...updated,
@@ -551,6 +565,18 @@ export const storageService = {
       orders.unshift(finalOrder);
     }
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+
+    if (previousStatus && previousStatus !== finalOrder.status) {
+      const tgConfig = this.getTelegramConfig();
+      if (tgConfig.enabled && tgConfig.notifyOnStatusUpdate && tgConfig.botToken && tgConfig.chatId) {
+        const lastNote =
+          finalOrder.statusHistory && finalOrder.statusHistory.length > 0
+            ? finalOrder.statusHistory[finalOrder.statusHistory.length - 1].noteKm
+            : undefined;
+        this.sendOrderStatusTelegramNotification(finalOrder, finalOrder.status, lastNote).catch(() => {});
+      }
+    }
+
     return finalOrder;
   },
 
@@ -579,6 +605,12 @@ export const storageService = {
     };
     orders.unshift(finalOrder);
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+
+    const tgConfig = this.getTelegramConfig();
+    if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
+      this.sendOrderTelegramNotification(finalOrder, true).catch(() => {});
+    }
+
     return finalOrder;
   },
 
@@ -824,15 +856,21 @@ export const storageService = {
     };
   },
 
-  // EXPORT CSV
-  exportOrdersToCSV(): void {
-    const orders = this.getOrders();
-    if (orders.length === 0) return;
+  // EXPORT CSV (ACCOUNTING & FULFILLMENT)
+  exportOrdersToCSV(customOrders?: Order[], filenameSuffix?: string): number {
+    const orders = customOrders ?? this.getOrders();
+    if (orders.length === 0) return 0;
+
+    const escapeCsv = (val: string | number | undefined | null): string => {
+      const str = String(val ?? '').replace(/"/g, '""');
+      return `"${str}"`;
+    };
 
     const headers = [
       'Order ID',
       'Created Date',
       'Customer Type',
+      'Agent ID',
       'Customer Name',
       'Phone Number',
       'Telegram',
@@ -840,46 +878,560 @@ export const storageService = {
       'District/Khan',
       'Commune/Sangkat',
       'Village',
-      'Address',
+      'Street Address',
+      'Items Count',
+      'Ordered Items (SKU x Qty - Product)',
       'Subtotal (JPY)',
       'Shipping (JPY)',
       'Total (JPY)',
       'Status',
-      'Items Count',
       'Synced Google Sheets',
       'Remarks',
     ];
 
-    const rows = orders.map((o) => [
-      `"${o.id}"`,
-      `"${new Date(o.createdAt).toLocaleString()}"`,
-      `"${o.customerType}"`,
-      `"${(o.customerName || '').replace(/"/g, '""')}"`,
-      `"${o.phoneNumber}"`,
-      `"${o.telegram || ''}"`,
-      `"${(o.provinceCity || '').replace(/"/g, '""')}"`,
-      `"${(o.districtKhan || '').replace(/"/g, '""')}"`,
-      `"${(o.communeSangkat || '').replace(/"/g, '""')}"`,
-      `"${(o.village || '').replace(/"/g, '""')}"`,
-      `"${(o.streetAddress || '').replace(/"/g, '""')}"`,
-      o.subtotalJPY,
-      o.shippingJPY,
-      o.totalJPY,
-      `"${o.status}"`,
-      o.items.length,
-      `"${o.syncedToGoogleSheets ? 'YES' : 'NO'}"`,
-      `"${(o.remarks || '').replace(/"/g, '""')}"`,
-    ]);
+    const rows = orders.map((o) => {
+      const itemsSummary = (o.items || [])
+        .map((it) => `${it.quantity}x ${it.sku} (${it.productName}) @ ¥${it.unitPriceJPY}`)
+        .join(' | ');
+
+      return [
+        escapeCsv(o.id),
+        escapeCsv(new Date(o.createdAt).toLocaleString()),
+        escapeCsv(o.customerType),
+        escapeCsv(o.agentId || ''),
+        escapeCsv(o.customerName),
+        escapeCsv(o.phoneNumber),
+        escapeCsv(o.telegram || ''),
+        escapeCsv(o.provinceCity),
+        escapeCsv(o.districtKhan),
+        escapeCsv(o.communeSangkat),
+        escapeCsv(o.village),
+        escapeCsv(o.streetAddress),
+        o.items.reduce((sum, it) => sum + it.quantity, 0),
+        escapeCsv(itemsSummary),
+        o.subtotalJPY,
+        o.shippingJPY,
+        o.totalJPY,
+        escapeCsv(o.status.toUpperCase()),
+        escapeCsv(o.syncedToGoogleSheets ? 'YES' : 'NO'),
+        escapeCsv(o.remarks || ''),
+      ];
+    });
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const suffix = filenameSuffix ? `_${filenameSuffix}` : '';
     link.setAttribute('href', url);
-    link.setAttribute('download', `GoJapan24hours_Orders_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `GoJapan24hours_Orders${suffix}_${dateStamp}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return orders.length;
+  },
+
+  // TELEGRAM BOT NOTIFICATION & PERIODIC REPORTS (WEEKLY / MONTHLY / YEARLY)
+  getTelegramConfig(): TelegramConfig {
+    const defaultConfig: TelegramConfig = {
+      botToken: '',
+      chatId: '',
+      enabled: true,
+      notifyOnNewOrder: true,
+      notifyOnStatusUpdate: true,
+      lastStatus: 'Not configured',
+    };
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.TELEGRAM_CONFIG);
+      if (raw) {
+        return { ...defaultConfig, ...JSON.parse(raw) };
+      }
+    } catch {
+      // fallback
+    }
+    return defaultConfig;
+  },
+
+  saveTelegramConfig(config: TelegramConfig): TelegramConfig {
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(config));
+    return config;
+  },
+
+  escapeHtml(text: string | number | undefined | null): string {
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  },
+
+  async detectTelegramChatId(botToken: string): Promise<{
+    success: boolean;
+    chatId?: string;
+    chatTitle?: string;
+    chatType?: 'group' | 'supergroup' | 'channel' | 'private';
+    detectedGroups?: TelegramDetectedChat[];
+    message: string;
+  }> {
+    const cleanToken = botToken.trim();
+    if (!cleanToken || !cleanToken.includes(':')) {
+      return {
+        success: false,
+        message: 'សូមបញ្ចូល Bot Token ឱ្យបានត្រឹមត្រូវជាមុនសិន (ឧ. 123456789:ABCdef...)',
+      };
+    }
+
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${cleanToken}/getUpdates?limit=100`
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        return {
+          success: false,
+          message: data.description || `Telegram API Error (${res.status})`,
+        };
+      }
+
+      const updates: any[] = data.result || [];
+      const groupMap = new Map<string, TelegramDetectedChat>();
+      let foundPrivateChat = false;
+
+      for (let i = updates.length - 1; i >= 0; i--) {
+        const u = updates[i];
+
+        // If a basic group was migrated to a supergroup, record the new supergroup ID
+        const migratedId = u.message?.migrate_to_chat_id;
+        const msgChat =
+          u.message?.chat ||
+          u.edited_message?.chat ||
+          u.channel_post?.chat ||
+          u.edited_channel_post?.chat ||
+          u.my_chat_member?.chat ||
+          u.chat_member?.chat;
+
+        if (!msgChat || !msgChat.id) continue;
+
+        const rawId = migratedId ? String(migratedId) : String(msgChat.id);
+        const rawType = migratedId ? 'supergroup' : (msgChat.type as string) || 'private';
+        const isGroupOrChannel =
+          rawType === 'group' ||
+          rawType === 'supergroup' ||
+          rawType === 'channel' ||
+          rawId.startsWith('-');
+
+        if (isGroupOrChannel) {
+          if (!groupMap.has(rawId)) {
+            groupMap.set(rawId, {
+              chatId: rawId,
+              title: msgChat.title || msgChat.username || `Telegram Group (${rawId})`,
+              type: (rawType === 'channel' ? 'channel' : rawType === 'supergroup' ? 'supergroup' : 'group'),
+              username: msgChat.username,
+            });
+          }
+        } else {
+          foundPrivateChat = true;
+        }
+      }
+
+      const detectedGroups = Array.from(groupMap.values());
+      if (detectedGroups.length > 0) {
+        const primaryGroup = detectedGroups[0];
+        return {
+          success: true,
+          chatId: primaryGroup.chatId,
+          chatTitle: primaryGroup.title,
+          chatType: primaryGroup.type,
+          detectedGroups,
+          message: `✅ រកឃើញ Telegram Group ដោយជោគជ័យ៖ «${primaryGroup.title}» (Group ID: ${primaryGroup.chatId})`,
+        };
+      }
+
+      if (foundPrivateChat) {
+        return {
+          success: false,
+          message:
+            '⚠️ រកឃើញតែឆាតផ្ទាល់ខ្លួនជាមួយ Bot ប៉ុណ្ណោះ (មិនទាន់ឃើញ Telegram Group ទេ)! សូម៖ ១) បញ្ចូល Bot ទៅក្នុង Telegram Group របស់អ្នក ២) វាយសារ "/start" នៅក្នុង Group នោះ ៣) ចុចប៊ូតុង «🔍 ទាញយក Group ID» ម្តងទៀត។',
+        };
+      }
+
+      return {
+        success: false,
+        message:
+          '⚠️ មិនទាន់ឃើញសារពី Telegram Group ទេ! សូមបញ្ចូល Bot ទៅក្នុង Telegram Group របស់អ្នក រួចវាយ "/start" ឬ "/test" នៅក្នុង Group នោះ រួចចុចប៊ូតុងនេះម្តងទៀត។',
+      };
+    } catch (err: unknown) {
+      const errObj = err as Error;
+      return {
+        success: false,
+        message: `មិនអាចភ្ជាប់ទៅ Telegram API បានទេ៖ ${errObj.message}`,
+      };
+    }
+  },
+
+  normalizeGroupChatId(rawChatId: string): string {
+    const trimmed = rawChatId.trim();
+    if (!trimmed) return '';
+    // Keep @group_or_channel_username or already negative group IDs (-100... or -...)
+    if (trimmed.startsWith('@') || trimmed.startsWith('-')) {
+      return trimmed;
+    }
+    // If user copied a supergroup ID from Telegram Web without the minus sign (e.g. 1001234567890)
+    if (/^100\d{9,}$/.test(trimmed)) {
+      return `-${trimmed}`;
+    }
+    return trimmed;
+  },
+
+  async sendTelegramMessage(
+    htmlText: string,
+    overrideConfig?: Partial<TelegramConfig>
+  ): Promise<{ success: boolean; message: string }> {
+    const saved = this.getTelegramConfig();
+    const botToken = (overrideConfig?.botToken ?? saved.botToken).trim();
+    let chatId = this.normalizeGroupChatId(overrideConfig?.chatId ?? saved.chatId);
+
+    if (!botToken || !chatId) {
+      return {
+        success: false,
+        message: 'សូមបញ្ចូល Telegram Bot Token និង Group Chat ID (ផ្តើមដោយ "-") ជាមុនសិន!',
+      };
+    }
+
+    try {
+      const sendRequest = async (targetChatId: string) => {
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chat_id: targetChatId,
+            text: htmlText,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      };
+
+      let { res, data } = await sendRequest(chatId);
+
+      // Automatically handle Telegram Group -> Supergroup upgrade migration
+      if (!data.ok && data.parameters?.migrate_to_chat_id) {
+        chatId = String(data.parameters.migrate_to_chat_id);
+        ({ res, data } = await sendRequest(chatId));
+      }
+
+      if (res.ok && data.ok) {
+        const now = new Date().toISOString();
+        const returnedChat = data.result?.chat;
+        const chatTitle =
+          returnedChat?.title ||
+          returnedChat?.username ||
+          saved.chatTitle ||
+          chatId;
+        const chatType = returnedChat?.type || saved.chatType || (chatId.startsWith('-') ? 'supergroup' : 'private');
+
+        this.saveTelegramConfig({
+          ...saved,
+          botToken,
+          chatId,
+          chatTitle,
+          chatType,
+          lastNotifiedAt: now,
+          lastStatus: `Connected to Group: ${chatTitle} (${chatId})`,
+        });
+        return {
+          success: true,
+          message: `✅ បានផ្ញើសារទៅកាន់ Telegram Group «${chatTitle}» (${chatId}) ដោយជោគជ័យ!`,
+        };
+      } else {
+        const errMsg = data.description || `HTTP ${res.status}`;
+        this.saveTelegramConfig({
+          ...saved,
+          lastStatus: `Error: ${errMsg}`,
+        });
+        return {
+          success: false,
+          message: `Telegram បដិសេធ៖ ${errMsg}`,
+        };
+      }
+    } catch (err: unknown) {
+      const errObj = err as Error;
+      return {
+        success: false,
+        message: `បរាជ័យក្នុងការភ្ជាប់ទៅ Telegram៖ ${errObj.message}`,
+      };
+    }
+  },
+
+  async testTelegramConnection(
+    botToken: string,
+    chatId: string
+  ): Promise<{ success: boolean; message: string }> {
+    const normalizedId = this.normalizeGroupChatId(chatId);
+    const msg = [
+      `🔔 <b>GoJapan 24hours — ប្រព័ន្ធជូនដំណឹងចូល Telegram Group ដំណើរការជោគជ័យ!</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `👥 <b>គោលដៅ (Target Group ID):</b> <code>${this.escapeHtml(normalizedId)}</code>`,
+      `✅ <b>ស្ថានភាព (Status):</b> បានភ្ជាប់ចូល Group រួចរាល់ (Group Connected)`,
+      `🛒 <b>មុខងារទី១:</b> ជូនដំណឹងចូល Group ភ្លាមៗរាល់ពេលមានការកម្មង់ថ្មី`,
+      `📊 <b>មុខងារទី២:</b> ផ្ញើរបាយការណ៍លក់ប្រចាំសប្តាហ៍ ខែ និងប្រចាំឆ្នាំចូល Group`,
+      `⏰ <b>ម៉ោងតេស្ត:</b> ${this.escapeHtml(new Date().toLocaleString())}`,
+    ].join('\n');
+
+    return this.sendTelegramMessage(msg, { botToken, chatId: normalizedId });
+  },
+
+  async sendOrderTelegramNotification(
+    order: Order,
+    isNewOrder: boolean = true
+  ): Promise<{ success: boolean; message: string }> {
+    const itemsLines = (order.items || [])
+      .map(
+        (it, idx) =>
+          `  ${idx + 1}. <b>${this.escapeHtml(it.productName)}</b> (${this.escapeHtml(it.sku)})\n     ចំនួន: <code>${it.quantity}</code> × ¥${it.unitPriceJPY.toLocaleString()} = <b>¥${it.subtotalJPY.toLocaleString()}</b>`
+      )
+      .join('\n');
+
+    const fullAddress = [
+      order.provinceCity,
+      order.districtKhan,
+      order.communeSangkat,
+      order.village,
+      order.streetAddress,
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    const headerTitle = isNewOrder
+      ? '🛒 <b>ការកម្មង់ថ្មី! (NEW ORDER RECEIVED)</b>'
+      : '📝 <b>ព័ត៌មានការកម្មង់ (ORDER NOTIFICATION)</b>';
+
+    const customerTypeBadge =
+      order.customerType === 'agent'
+        ? `ភ្នាក់ងារលក់ (Agent: ${this.escapeHtml(order.agentId || 'Verified')})`
+        : 'អតិថិជនទូទៅ (Customer)';
+
+    const html = [
+      headerTitle,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🆔 <b>លេខកូដកម្មង់ (Order ID):</b> <code>${this.escapeHtml(order.id)}</code>`,
+      `📅 <b>កាលបរិច្ឆេទ (Date):</b> ${this.escapeHtml(new Date(order.createdAt).toLocaleString())}`,
+      `👤 <b>អតិថិជន (Customer):</b> <b>${this.escapeHtml(order.customerName)}</b>`,
+      `🏷 <b>ប្រភេទ (Type):</b> ${customerTypeBadge}`,
+      `📞 <b>លេខទូរស័ព្ទ (Phone):</b> <code>${this.escapeHtml(order.phoneNumber)}</code>`,
+      order.telegram ? `💬 <b>Telegram:</b> ${this.escapeHtml(order.telegram)}` : null,
+      `📍 <b>អាសយដ្ឋានដឹកជញ្ជូន (Address):</b>\n${this.escapeHtml(fullAddress || '—')}`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📦 <b>មុខទំនិញដែលបានកម្មង់ (${order.items.length} មុខ):</b>`,
+      itemsLines,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `💴 <b>សរុបរង (Subtotal):</b> ¥${order.subtotalJPY.toLocaleString()} JPY`,
+      `🚚 <b>ថ្លៃដឹកជញ្ជូន (Shipping):</b> ¥${order.shippingJPY.toLocaleString()} JPY`,
+      `💰 <b>សរុបរួម (Grand Total): ¥${order.totalJPY.toLocaleString()} JPY</b>`,
+      `📌 <b>ស្ថានភាព (Status):</b> <code>${this.escapeHtml(order.status.toUpperCase())}</code>`,
+      order.remarks ? `📝 <b>ចំណាំ (Remarks):</b> ${this.escapeHtml(order.remarks)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return this.sendTelegramMessage(html);
+  },
+
+  async sendOrderStatusTelegramNotification(
+    order: Order,
+    newStatus: OrderStatus,
+    note?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const statusLabelsKm: Record<OrderStatus, string> = {
+      new: 'ថ្មី · រង់ចាំ (Pending)',
+      confirmed: 'បានបញ្ជាក់ (Confirmed)',
+      processing: 'កំពុងរៀបចំ (Processing)',
+      shipping: 'កំពុងដឹកជញ្ជូន (Shipping)',
+      completed: 'បានបញ្ចប់ (Completed)',
+      cancelled: 'បានបោះបង់ (Cancelled)',
+    };
+
+    const html = [
+      `🔄 <b>បច្ចុប្បន្នភាពស្ថានភាពការកម្មង់ (ORDER STATUS UPDATED)</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🆔 <b>លេខកូដ (Order ID):</b> <code>${this.escapeHtml(order.id)}</code>`,
+      `👤 <b>អតិថិជន (Customer):</b> ${this.escapeHtml(order.customerName)} (<code>${this.escapeHtml(order.phoneNumber)}</code>)`,
+      `📌 <b>ស្ថានភាពថ្មី (New Status):</b> <b>${this.escapeHtml(statusLabelsKm[newStatus] || newStatus.toUpperCase())}</b>`,
+      `💰 <b>ទឹកប្រាក់សរុប (Total):</b> ¥${order.totalJPY.toLocaleString()} JPY`,
+      note ? `📝 <b>កំណត់សម្គាល់ (Note):</b> ${this.escapeHtml(note)}` : null,
+      `⏰ <b>ម៉ោងកែប្រែ:</b> ${this.escapeHtml(new Date().toLocaleString())}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return this.sendTelegramMessage(html);
+  },
+
+  generateSalesReport(period: ReportPeriod, referenceDate: Date = new Date()): SalesReportSummary {
+    const allOrders = this.getOrders();
+    const ref = new Date(referenceDate);
+
+    let startDate: Date;
+    let endDate: Date = new Date(ref);
+    endDate.setHours(23, 59, 59, 999);
+
+    let periodLabelKm = '';
+    let periodLabelEn = '';
+    let dateRangeLabel = '';
+
+    if (period === 'weekly') {
+      startDate = new Date(ref);
+      startDate.setDate(ref.getDate() - 6);
+      startDate.setHours(0, 0, 0, 0);
+      periodLabelKm = 'របាយការណ៍ប្រចាំសប្តាហ៍ (៧ ថ្ងៃចុងក្រោយ)';
+      periodLabelEn = 'Weekly Sales Report (Last 7 Days)';
+      dateRangeLabel = `${startDate.toLocaleDateString()} – ${endDate.toLocaleDateString()}`;
+    } else if (period === 'monthly') {
+      startDate = new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
+      const monthName = ref.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      periodLabelKm = `របាយការណ៍ប្រចាំខែ (${monthName})`;
+      periodLabelEn = `Monthly Sales Report (${monthName})`;
+      dateRangeLabel = `${startDate.toLocaleDateString()} – ${endDate.toLocaleDateString()}`;
+    } else {
+      startDate = new Date(ref.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endDate = new Date(ref.getFullYear(), 11, 31, 23, 59, 59, 999);
+      periodLabelKm = `របាយការណ៍ប្រចាំឆ្នាំ (${ref.getFullYear()})`;
+      periodLabelEn = `Yearly Sales Report (${ref.getFullYear()})`;
+      dateRangeLabel = `01/01/${ref.getFullYear()} – 31/12/${ref.getFullYear()}`;
+    }
+
+    const periodOrders = allOrders.filter((o) => {
+      const d = new Date(o.createdAt);
+      return d >= startDate && d <= endDate;
+    });
+
+    const statusCounts: Record<OrderStatus, number> = {
+      new: 0,
+      confirmed: 0,
+      processing: 0,
+      shipping: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+
+    let activeRevenueJPY = 0;
+    let totalShippingJPY = 0;
+    let customerOrdersCount = 0;
+    let agentOrdersCount = 0;
+
+    const productMap = new Map<string, { sku: string; name: string; quantity: number; revenueJPY: number }>();
+
+    periodOrders.forEach((o) => {
+      statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
+      if (o.customerType === 'agent') {
+        agentOrdersCount += 1;
+      } else {
+        customerOrdersCount += 1;
+      }
+
+      if (o.status !== 'cancelled') {
+        activeRevenueJPY += o.totalJPY;
+        totalShippingJPY += o.shippingJPY || 0;
+
+        (o.items || []).forEach((it) => {
+          const existing = productMap.get(it.sku);
+          if (existing) {
+            existing.quantity += it.quantity;
+            existing.revenueJPY += it.subtotalJPY;
+          } else {
+            productMap.set(it.sku, {
+              sku: it.sku,
+              name: it.productName,
+              quantity: it.quantity,
+              revenueJPY: it.subtotalJPY,
+            });
+          }
+        });
+      }
+    });
+
+    const topProducts = Array.from(productMap.values())
+      .sort((a, b) => b.revenueJPY - a.revenueJPY)
+      .slice(0, 5);
+
+    return {
+      period,
+      periodLabelKm,
+      periodLabelEn,
+      dateRangeLabel,
+      orders: periodOrders,
+      totalOrders: periodOrders.length,
+      activeRevenueJPY,
+      totalShippingJPY,
+      customerOrdersCount,
+      agentOrdersCount,
+      statusCounts,
+      topProducts,
+    };
+  },
+
+  formatSalesReportTelegramHTML(report: SalesReportSummary): string {
+    const topProductsText =
+      report.topProducts.length > 0
+        ? report.topProducts
+            .map(
+              (p, idx) =>
+                `  ${idx + 1}. <b>${this.escapeHtml(p.name)}</b> (<code>${this.escapeHtml(p.sku)}</code>)\n     លក់បាន: <b>${p.quantity}</b> គ្រឿង · សរុប: <b>¥${p.revenueJPY.toLocaleString()}</b>`
+            )
+            .join('\n')
+        : '  • មិនទាន់មានទិន្នន័យលក់ក្នុងកំឡុងពេលនេះទេ';
+
+    return [
+      `📊 <b>${this.escapeHtml(report.periodLabelKm)}</b>`,
+      `🌐 <b>GoJapan 24hours — ${this.escapeHtml(report.periodLabelEn)}</b>`,
+      `📅 <b>ចន្លោះកាលបរិច្ឆេទ (Period):</b> <code>${this.escapeHtml(report.dateRangeLabel)}</code>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `💰 <b>ចំណូលសរុប (Active Revenue):</b> <b>¥${report.activeRevenueJPY.toLocaleString()} JPY</b>`,
+      `🚚 <b>ថ្លៃដឹកជញ្ជូនសរុប (Shipping):</b> ¥${report.totalShippingJPY.toLocaleString()} JPY`,
+      `📦 <b>ចំនួនការកម្មង់សរុប (Total Orders):</b> <b>${report.totalOrders}</b> ការកម្មង់`,
+      `  • អតិថិជនទូទៅ (Customers): ${report.customerOrdersCount}`,
+      `  • ភ្នាក់ងារលក់ (Sales Agents): ${report.agentOrdersCount}`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📌 <b>ស្ថិតិស្ថានភាពការកម្មង់ (Order Statuses):</b>`,
+      `  ⏳ ថ្មី · រង់ចាំ (Pending): <b>${report.statusCounts.new}</b>`,
+      `  ☑️ បានបញ្ជាក់ (Confirmed): <b>${report.statusCounts.confirmed}</b>`,
+      `  ⚙️ កំពុងរៀបចំ (Processing): <b>${report.statusCounts.processing}</b>`,
+      `  🚚 កំពុងដឹកជញ្ជូន (Shipping): <b>${report.statusCounts.shipping}</b>`,
+      `  ✅ បានបញ្ចប់ (Completed): <b>${report.statusCounts.completed}</b>`,
+      `  ❌ បានបោះបង់ (Cancelled): <b>${report.statusCounts.cancelled}</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🏆 <b>ផលិតផលលក់ដាច់បំផុត (Top Selling Products):</b>`,
+      topProductsText,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `⏰ <b>បង្កើតរបាយការណ៍នៅ:</b> ${this.escapeHtml(new Date().toLocaleString())}`,
+    ].join('\n');
+  },
+
+  async sendPeriodicTelegramReport(
+    period: ReportPeriod,
+    referenceDate: Date = new Date()
+  ): Promise<{ success: boolean; message: string; report: SalesReportSummary }> {
+    const report = this.generateSalesReport(period, referenceDate);
+    const html = this.formatSalesReportTelegramHTML(report);
+    const res = await this.sendTelegramMessage(html);
+    if (res.success) {
+      const cfg = this.getTelegramConfig();
+      this.saveTelegramConfig({
+        ...cfg,
+        lastReportSentAt: new Date().toISOString(),
+        lastStatus: `Sent ${period} report (${report.totalOrders} orders)`,
+      });
+    }
+    return {
+      ...res,
+      report,
+    };
   },
 
   // ADMIN AUTH (1-MINUTE SECURITY AUTO-TIMEOUT)
