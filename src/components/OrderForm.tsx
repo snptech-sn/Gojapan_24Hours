@@ -13,7 +13,7 @@ import {
   User,
   Shield,
 } from 'lucide-react';
-import { CAMBODIA_PROVINCES } from '../data/cambodiaLocations';
+import { JAPAN_PREFECTURES } from '../data/japanLocations';
 import { storageService } from '../services/storageService';
 import { CustomerType, Language, Order, OrderItem, Product } from '../types';
 import { translations } from '../utils/translations';
@@ -49,9 +49,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [telegram, setTelegram] = useState<string>('');
 
-  // Location Hierarchy
-  const [provinceCity, setProvinceCity] = useState<string>(CAMBODIA_PROVINCES[0].nameKm);
-  const [districtKhan, setDistrictKhan] = useState<string>(CAMBODIA_PROVINCES[0].districts[0].nameKm);
+  // Japan Location Hierarchy
+  const [provinceCity, setProvinceCity] = useState<string>(JAPAN_PREFECTURES[0].nameKm);
+  const [districtKhan, setDistrictKhan] = useState<string>(JAPAN_PREFECTURES[0].cities[0].nameKm);
   const [communeSangkat, setCommuneSangkat] = useState<string>('');
   const [village, setVillage] = useState<string>('');
   const [streetAddress, setStreetAddress] = useState<string>('');
@@ -95,15 +95,15 @@ export const OrderForm: React.FC<OrderFormProps> = ({
     }
   }, [initialItems]);
 
-  // Update districts when province changes
-  const selectedProvinceData = CAMBODIA_PROVINCES.find((p) => p.nameKm === provinceCity);
-  const availableDistricts = selectedProvinceData ? selectedProvinceData.districts : [];
+  // Update cities/wards when Japanese prefecture changes
+  const selectedPrefectureData = JAPAN_PREFECTURES.find((p) => p.nameKm === provinceCity);
+  const availableCities = selectedPrefectureData ? selectedPrefectureData.cities : [];
 
-  const handleProvinceChange = (newProv: string) => {
-    setProvinceCity(newProv);
-    const provObj = CAMBODIA_PROVINCES.find((p) => p.nameKm === newProv);
-    if (provObj && provObj.districts.length > 0) {
-      setDistrictKhan(provObj.districts[0].nameKm);
+  const handleProvinceChange = (newPrefecture: string) => {
+    setProvinceCity(newPrefecture);
+    const prefObj = JAPAN_PREFECTURES.find((p) => p.nameKm === newPrefecture);
+    if (prefObj && prefObj.cities.length > 0) {
+      setDistrictKhan(prefObj.cities[0].nameKm);
     } else {
       setDistrictKhan('');
     }
@@ -463,14 +463,21 @@ export const OrderForm: React.FC<OrderFormProps> = ({
           </div>
         </div>
 
-        {/* SECTION 2: CAMBODIA / JAPAN DELIVERY ADDRESS */}
+        {/* SECTION 2: JAPAN-ONLY DELIVERY ADDRESS */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <span>{t.deliveryAddress}</span>
-            <span className="text-xs font-normal text-slate-400">
-              (ខេត្ត/ក្រុង, ស្រុក/ខណ្ឌ, ឃុំ/សង្កាត់, ភូមិ)
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h2 className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
+              <span>🇯🇵 {t.deliveryAddress}</span>
+              <span className="text-xs font-normal text-slate-400">
+                {language === 'km'
+                  ? '(ដឹកជញ្ជូនតែក្នុងប្រទេសជប៉ុនប៉ុណ្ណោះ · 都道府県, 市区町村, 〒 Postal Code)'
+                  : '(Japan Only · Prefecture, City/Ward, 〒 Postal Code, Building)'}
+              </span>
+            </h2>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-gojapan-50 text-gojapan-700 border border-gojapan-200 self-start sm:self-auto">
+              {language === 'km' ? 'សម្រាប់តែអាស័យដ្ឋាននៅប្រទេសជប៉ុន' : 'Japan Domestic Delivery Only'}
             </span>
-          </h2>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
@@ -482,9 +489,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 onChange={(e) => handleProvinceChange(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
               >
-                {CAMBODIA_PROVINCES.map((prov) => (
-                  <option key={prov.nameKm} value={prov.nameKm}>
-                    {prov.nameKm}
+                {JAPAN_PREFECTURES.map((pref) => (
+                  <option key={pref.nameKm} value={pref.nameKm}>
+                    {language === 'km' ? pref.nameKm : pref.nameEn}
                   </option>
                 ))}
               </select>
@@ -499,9 +506,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 onChange={(e) => setDistrictKhan(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
               >
-                {availableDistricts.map((dist) => (
-                  <option key={dist.nameKm} value={dist.nameKm}>
-                    {dist.nameKm}
+                {availableCities.map((city) => (
+                  <option key={city.nameKm} value={city.nameKm}>
+                    {language === 'km' ? city.nameKm : city.nameEn}
                   </option>
                 ))}
               </select>
@@ -515,8 +522,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 type="text"
                 value={communeSangkat}
                 onChange={(e) => setCommuneSangkat(e.target.value)}
-                placeholder="e.g., សង្កាត់ទឹកល្អក់១"
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
+                placeholder={language === 'km' ? 'ឧ. 〒 160-0022' : 'e.g., 〒 160-0022'}
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 font-mono focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
               />
             </div>
 
@@ -528,7 +535,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 type="text"
                 value={village}
                 onChange={(e) => setVillage(e.target.value)}
-                placeholder="e.g., ភូមិ៣"
+                placeholder={language === 'km' ? 'ឧ. Shinjuku 3-14-1 (新宿)' : 'e.g., Shinjuku 3-14-1'}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
               />
             </div>
@@ -542,7 +549,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({
               type="text"
               value={streetAddress}
               onChange={(e) => setStreetAddress(e.target.value)}
-              placeholder="e.g., ផ្ទះលេខ 45A, ផ្លូវ 1982 ឬ ព័ត៌មានលម្អិត..."
+              placeholder={
+                language === 'km'
+                  ? 'ឧ. Sakura Mansion 302 (ឈ្មោះអគារ លេខបន្ទប់ សណ្ឋាគារ ឬជើងហោះហើរ NH818)...'
+                  : 'e.g., Sakura Mansion Room 302, Hotel name, or Airport Flight No...'
+              }
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-gojapan-500/20 focus:border-gojapan-500"
             />
           </div>

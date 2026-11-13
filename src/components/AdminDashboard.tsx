@@ -342,8 +342,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       customerName: '',
       phoneNumber: '',
       telegram: '',
-      provinceCity: 'រាជធានីភ្នំពេញ (Phnom Penh)',
-      districtKhan: '',
+      provinceCity: 'តូក្យូ (Tokyo - 東京都)',
+      districtKhan: 'ស៊ិនជូគុ (Shinjuku-ku / 新宿区)',
       communeSangkat: '',
       village: '',
       streetAddress: '',
@@ -478,7 +478,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       customerName: '',
       customerType: 'customer',
       telegram: '',
-      provinceCity: 'រាជធានីភ្នំពេញ (Phnom Penh)',
+      provinceCity: 'តូក្យូ (Tokyo - 東京都)',
       totalOrders: 1,
       totalSpentJPY: 0,
       lastOrderDate: new Date().toISOString(),
@@ -3865,60 +3865,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Delivery Address */}
+              {/* Delivery Address (Japan Only) */}
               <div className="p-3 bg-slate-50 rounded-xl space-y-3 border border-slate-200">
                 <span className="font-bold text-slate-800 uppercase tracking-wide block">
-                  Delivery Destination
+                  🇯🇵 Japan Delivery Destination
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Province / City *</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Prefecture (ខេត្ត/ក្រុងនៅជប៉ុន) *</label>
                     <input
                       type="text"
                       required
                       value={editingOrder.provinceCity}
                       onChange={(e) => setEditingOrder({ ...editingOrder, provinceCity: e.target.value })}
+                      placeholder="e.g., តូក្យូ (Tokyo - 東京都)"
                       className="w-full px-2.5 py-1.5 rounded border border-slate-300"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">District / Khan</label>
+                    <label className="block font-semibold text-slate-700 mb-1">City / Ward (ទីក្រុង / ខណ្ឌ)</label>
                     <input
                       type="text"
                       value={editingOrder.districtKhan}
                       onChange={(e) => setEditingOrder({ ...editingOrder, districtKhan: e.target.value })}
+                      placeholder="e.g., Shinjuku-ku / 新宿区"
                       className="w-full px-2.5 py-1.5 rounded border border-slate-300"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Commune / Sangkat</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Postal Code (〒 លេខកូដប្រៃសណីយ៍)</label>
                     <input
                       type="text"
                       value={editingOrder.communeSangkat}
                       onChange={(e) => setEditingOrder({ ...editingOrder, communeSangkat: e.target.value })}
-                      className="w-full px-2.5 py-1.5 rounded border border-slate-300"
+                      placeholder="e.g., 〒 160-0022"
+                      className="w-full px-2.5 py-1.5 rounded border border-slate-300 font-mono"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Village (ភូមិ)</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Town / Chome-Banchi (町名・番地)</label>
                     <input
                       type="text"
                       value={editingOrder.village}
                       onChange={(e) => setEditingOrder({ ...editingOrder, village: e.target.value })}
+                      placeholder="e.g., Shinjuku 3-14-1"
                       className="w-full px-2.5 py-1.5 rounded border border-slate-300"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-semibold text-slate-700 mb-1">Street Address</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Building & Room No. / Hotel / Flight</label>
                     <input
                       type="text"
                       value={editingOrder.streetAddress}
                       onChange={(e) => setEditingOrder({ ...editingOrder, streetAddress: e.target.value })}
-                      placeholder="House / Street / Landmark"
+                      placeholder="e.g., Sakura Mansion Room 302"
                       className="w-full px-2.5 py-1.5 rounded border border-slate-300"
                     />
                   </div>
