@@ -179,12 +179,29 @@ function doPost(e) {
       // Update or Append Customer in Customers Sheet
       updateCustomerRecord(customersSheet, order, timestamp);
 
+      // Automatically send Telegram Group Notification from server if not already sent by browser
+      let telegramNotified = Boolean(payload.alreadySentTelegram);
+      if (!telegramNotified) {
+        telegramNotified = sendTelegramOrderAlert_(order);
+      }
+
       return jsonResponse({
         success: true,
         message: 'Order saved to Google Sheets successfully!',
         orderId: order.id,
-        savedAt: timestamp
+        savedAt: timestamp,
+        telegramNotified: telegramNotified
       });
+    }
+
+    // 1B. Save Telegram Bot & Group Configuration (Server-Side Fallback for All Customers)
+    if (action === 'save_telegram_config') {
+      const cfg = payload.telegramConfig || {};
+      const props = PropertiesService.getScriptProperties();
+      if (cfg.botToken) props.setProperty('TG_BOT_TOKEN', String(cfg.botToken).trim());
+      if (cfg.chatId) props.setProperty('TG_GROUP_ID', String(cfg.chatId).trim());
+      props.setProperty('TG_ENABLED', cfg.enabled === false ? 'false' : 'true');
+      return jsonResponse({ success: true, message: 'Telegram Group config saved to Apps Script!' });
     }
 
     // 2. Update Order Status
@@ -361,6 +378,63 @@ function updateCustomerRecord(sheet, order, timestamp) {
       orderTotal,
       timestamp
     ]);
+  }
+}
+
+/**
+ * Send instant Telegram Group alert from Google Apps Script server (works for all customers on all devices)
+ */
+function sendTelegramOrderAlert_(order) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const botToken = props.getProperty('TG_BOT_TOKEN');
+    const groupId = props.getProperty('TG_GROUP_ID');
+    const enabled = props.getProperty('TG_ENABLED');
+    if (!botToken || !groupId || enabled === 'false') return false;
+
+    const escapeHtml = function(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsText = items.map(function(it, idx) {
+      return '  ' + (idx + 1) + '. <b>' + escapeHtml(it.productName) + '</b> (' + escapeHtml(it.sku) + ')\\n     ចំនួន: <code>' + Number(it.quantity || 1) + '</code> × ¥' + Number(it.unitPriceJPY || 0).toLocaleString() + ' = <b>¥' + Number(it.subtotalJPY || 0).toLocaleString() + '</b>';
+    }).join('\\n');
+
+    const fullAddr = [order.provinceCity, order.districtKhan, order.communeSangkat, order.village, order.streetAddress]
+      .filter(Boolean).join(', ');
+
+    const text = [
+      '🛒 <b>ការកម្មង់ថ្មី! (NEW ORDER RECEIVED)</b>',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '🆔 <b>លេខកូដកម្មង់:</b> <code>' + escapeHtml(order.id) + '</code>',
+      '👤 <b>អតិថិជន:</b> <b>' + escapeHtml(order.customerName) + '</b>',
+      '📞 <b>លេខទូរស័ព្ទ:</b> <code>' + escapeHtml(order.phoneNumber) + '</code>',
+      order.telegram ? '💬 <b>Telegram:</b> ' + escapeHtml(order.telegram) : null,
+      '📍 <b>អាសយដ្ឋាន:</b>\\n' + escapeHtml(fullAddr || '—'),
+      '━━━━━━━━━━━━━━━━━━━━',
+      '📦 <b>មុខទំនិញ (' + items.length + ' មុខ):</b>',
+      itemsText || '  • គ្មានមុខទំនិញ',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '💰 <b>សរុបរួម: ¥' + Number(order.totalJPY || 0).toLocaleString() + ' JPY</b>',
+      order.remarks ? '📝 <b>ចំណាំ:</b> ' + escapeHtml(order.remarks) : null
+    ].filter(Boolean).join('\\n');
+
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        chat_id: groupId,
+        text: text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      })
+    });
+    const json = JSON.parse(res.getContentText() || '{}');
+    return Boolean(json.ok);
+  } catch (e) {
+    return false;
   }
 }
 

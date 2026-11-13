@@ -14,7 +14,10 @@ import { translations } from './utils/translations';
 import { Search, Wifi, Smartphone, Globe, Router, CheckCircle, ShieldCheck, Facebook, Youtube } from 'lucide-react';
 
 export default function App() {
-  const [language, setLanguage] = useState<Language>('km');
+  const [language, setLanguage] = useState<Language>(() => {
+    storageService.importTelegramSetupFromUrl();
+    return 'km';
+  });
   const [currentTab, setCurrentTab] = useState<'home' | 'order' | 'tracking' | 'admin'>('home');
   const [products, setProducts] = useState<Product[]>(() => storageService.getProducts());
   const [orders, setOrders] = useState<Order[]>(() => storageService.getOrders());

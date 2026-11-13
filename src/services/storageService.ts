@@ -366,12 +366,58 @@ export const storageService = {
     );
   },
 
-  async saveOrder(order: Order): Promise<{ order: Order; synced: boolean; error?: string }> {
+  async saveOrder(order: Order): Promise<{
+    order: Order;
+    synced: boolean;
+    error?: string;
+    telegramNotified: boolean;
+    telegramError?: string;
+  }> {
     const orders = this.getOrders();
     const existingIndex = orders.findIndex((o) => o.id === order.id);
+    const isNewOrder = existingIndex < 0;
     let finalOrder = { ...order };
 
-    // Attempt direct sync to Google Apps Script if URL configured
+    // Ensure status history is present and starts with order creation
+    if (!finalOrder.statusHistory || finalOrder.statusHistory.length === 0) {
+      finalOrder.statusHistory = [
+        {
+          status: 'new',
+          timestamp: finalOrder.createdAt || new Date().toISOString(),
+          noteKm: 'ការកម្មង់ត្រូវបានបង្កើត និងកត់ត្រាចូលក្នុងប្រព័ន្ធដោយជោគជ័យ',
+          noteEn: 'Order placed online and registered in GoJapan system',
+        },
+      ];
+    }
+
+    // 1. Save immediately to localStorage so order is never lost
+    if (existingIndex >= 0) {
+      orders[existingIndex] = finalOrder;
+    } else {
+      orders.unshift(finalOrder);
+    }
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+
+    // 2. Automatically notify Telegram Group directly (AWAIT so it finishes reliably!)
+    let telegramNotified = false;
+    let telegramError: string | undefined;
+    const tgConfig = this.getTelegramConfig();
+
+    if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
+      const tgRes = await this.sendOrderTelegramNotification(finalOrder, isNewOrder, tgConfig);
+      telegramNotified = tgRes.success;
+      if (!tgRes.success) {
+        telegramError = tgRes.message;
+      }
+    } else if (!tgConfig.enabled) {
+      telegramError = 'ការជូនដំណឹង Telegram ត្រូវបានបិទនៅក្នុង Admin Dashboard';
+    } else if (!tgConfig.notifyOnNewOrder) {
+      telegramError = 'មុខងារជូនដំណឹងពេលមានការកម្មង់ថ្មីត្រូវបានបិទ';
+    } else {
+      telegramError = 'មិនទាន់បានកំណត់ Telegram Bot Token ឬ Group ID នៅលើ Browser នេះទេ';
+    }
+
+    // 3. Attempt direct sync to Google Apps Script if URL configured (also acts as server-side Telegram backup)
     const config = this.getAppsScriptConfig();
     let synced = false;
     let syncError: string | undefined;
@@ -381,6 +427,7 @@ export const storageService = {
         const payload = {
           action: 'submit_order',
           order: finalOrder,
+          alreadySentTelegram: telegramNotified,
         };
 
         // Note: Using text/plain prevents CORS preflight OPTIONS rejection in Google Apps Script Web App
@@ -397,6 +444,10 @@ export const storageService = {
           if (resJson.success !== false) {
             synced = true;
             finalOrder.syncedToGoogleSheets = true;
+            if (!telegramNotified && resJson.telegramNotified) {
+              telegramNotified = true;
+              telegramError = undefined;
+            }
             this.saveAppsScriptConfig({
               ...config,
               isConnected: true,
@@ -422,32 +473,15 @@ export const storageService = {
       finalOrder.syncError = syncError;
     }
 
-    // Ensure status history is present and starts with order creation
-    if (!finalOrder.statusHistory || finalOrder.statusHistory.length === 0) {
-      finalOrder.statusHistory = [
-        {
-          status: 'new',
-          timestamp: finalOrder.createdAt || new Date().toISOString(),
-          noteKm: 'ការកម្មង់ត្រូវបានបង្កើត និងកត់ត្រាចូលក្នុងប្រព័ន្ធដោយជោគជ័យ',
-          noteEn: 'Order placed online and registered in GoJapan system',
-        },
-      ];
+    // Update order with sync flags
+    const latestOrders = this.getOrders();
+    const idxToUpdate = latestOrders.findIndex((o) => o.id === finalOrder.id);
+    if (idxToUpdate >= 0) {
+      latestOrders[idxToUpdate] = finalOrder;
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(latestOrders));
     }
 
-    if (existingIndex >= 0) {
-      orders[existingIndex] = finalOrder;
-    } else {
-      orders.unshift(finalOrder);
-    }
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-
-    // Automatically notify Telegram when a new order is placed
-    const tgConfig = this.getTelegramConfig();
-    if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
-      this.sendOrderTelegramNotification(finalOrder, existingIndex < 0).catch(() => {});
-    }
-
-    return { order: finalOrder, synced, error: syncError };
+    return { order: finalOrder, synced, error: syncError, telegramNotified, telegramError };
   },
 
   async updateOrderStatus(
@@ -935,18 +969,32 @@ export const storageService = {
 
   // TELEGRAM BOT NOTIFICATION & PERIODIC REPORTS (WEEKLY / MONTHLY / YEARLY)
   getTelegramConfig(): TelegramConfig {
+    const envObj = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
+    const envBotToken = String(envObj.VITE_TELEGRAM_BOT_TOKEN || '').trim();
+    const envChatId = this.normalizeGroupChatId(String(envObj.VITE_TELEGRAM_GROUP_ID || envObj.VITE_TELEGRAM_CHAT_ID || ''));
+
     const defaultConfig: TelegramConfig = {
-      botToken: '',
-      chatId: '',
+      botToken: envBotToken,
+      chatId: envChatId,
       enabled: true,
       notifyOnNewOrder: true,
       notifyOnStatusUpdate: true,
-      lastStatus: 'Not configured',
+      lastStatus: envBotToken && envChatId ? 'Configured via Env' : 'Not configured',
     };
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.TELEGRAM_CONFIG);
       if (raw) {
-        return { ...defaultConfig, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        const merged: TelegramConfig = {
+          ...defaultConfig,
+          ...parsed,
+          botToken: String(parsed.botToken || envBotToken || '').trim(),
+          chatId: this.normalizeGroupChatId(String(parsed.chatId || envChatId || '')),
+          enabled: parsed.enabled !== false,
+          notifyOnNewOrder: parsed.notifyOnNewOrder !== false,
+          notifyOnStatusUpdate: parsed.notifyOnStatusUpdate !== false,
+        };
+        return merged;
       }
     } catch {
       // fallback
@@ -955,8 +1003,98 @@ export const storageService = {
   },
 
   saveTelegramConfig(config: TelegramConfig): TelegramConfig {
-    localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(config));
-    return config;
+    const normalized: TelegramConfig = {
+      ...config,
+      botToken: String(config.botToken || '').trim(),
+      chatId: this.normalizeGroupChatId(String(config.chatId || '')),
+    };
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(normalized));
+    return normalized;
+  },
+
+  async syncTelegramConfigToAppsScript(config?: TelegramConfig): Promise<boolean> {
+    const appsCfg = this.getAppsScriptConfig();
+    if (!appsCfg.webAppUrl || !appsCfg.webAppUrl.startsWith('https://script.google.com/macros/s/')) {
+      return false;
+    }
+    const tg = config || this.getTelegramConfig();
+    if (!tg.botToken || !tg.chatId) return false;
+    try {
+      const res = await fetch(appsCfg.webAppUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'save_telegram_config',
+          telegramConfig: {
+            botToken: tg.botToken.trim(),
+            chatId: this.normalizeGroupChatId(tg.chatId),
+            enabled: tg.enabled,
+            notifyOnNewOrder: tg.notifyOnNewOrder,
+          },
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  generateTelegramSetupShareUrl(): string {
+    const tg = this.getTelegramConfig();
+    const appsCfg = this.getAppsScriptConfig();
+    const payload = {
+      botToken: tg.botToken,
+      chatId: tg.chatId,
+      chatTitle: tg.chatTitle || '',
+      chatType: tg.chatType || 'supergroup',
+      enabled: tg.enabled,
+      notifyOnNewOrder: tg.notifyOnNewOrder,
+      notifyOnStatusUpdate: tg.notifyOnStatusUpdate,
+      webAppUrl: appsCfg.webAppUrl || '',
+    };
+    const jsonStr = JSON.stringify(payload);
+    const encoded = btoa(unescape(encodeURIComponent(jsonStr)));
+    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    return `${baseUrl}#tg_setup=${encoded}`;
+  },
+
+  importTelegramSetupFromUrl(): boolean {
+    if (typeof window === 'undefined') return false;
+    const hash = window.location.hash || '';
+    const match = hash.match(/tg_setup=([^&]+)/);
+    if (!match || !match[1]) return false;
+
+    try {
+      const decodedJson = decodeURIComponent(escape(atob(match[1])));
+      const payload = JSON.parse(decodedJson);
+      if (payload.botToken && payload.chatId) {
+        const current = this.getTelegramConfig();
+        this.saveTelegramConfig({
+          ...current,
+          botToken: String(payload.botToken).trim(),
+          chatId: this.normalizeGroupChatId(String(payload.chatId)),
+          chatTitle: payload.chatTitle || current.chatTitle,
+          chatType: payload.chatType || 'supergroup',
+          enabled: payload.enabled !== false,
+          notifyOnNewOrder: payload.notifyOnNewOrder !== false,
+          notifyOnStatusUpdate: payload.notifyOnStatusUpdate !== false,
+          lastStatus: `Synced Group: ${payload.chatTitle || payload.chatId}`,
+        });
+      }
+      if (payload.webAppUrl && String(payload.webAppUrl).startsWith('https://script.google.com/macros/s/')) {
+        const currentApps = this.getAppsScriptConfig();
+        this.saveAppsScriptConfig({
+          ...currentApps,
+          webAppUrl: String(payload.webAppUrl).trim(),
+          isConnected: true,
+        });
+      }
+      // Clean sensitive token hash from browser address bar immediately
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   escapeHtml(text: string | number | undefined | null): string {
@@ -1188,12 +1326,14 @@ export const storageService = {
 
   async sendOrderTelegramNotification(
     order: Order,
-    isNewOrder: boolean = true
+    isNewOrder: boolean = true,
+    overrideConfig?: Partial<TelegramConfig>
   ): Promise<{ success: boolean; message: string }> {
-    const itemsLines = (order.items || [])
+    const itemsList = Array.isArray(order.items) ? order.items : [];
+    const itemsLines = itemsList
       .map(
         (it, idx) =>
-          `  ${idx + 1}. <b>${this.escapeHtml(it.productName)}</b> (${this.escapeHtml(it.sku)})\n     ចំនួន: <code>${it.quantity}</code> × ¥${it.unitPriceJPY.toLocaleString()} = <b>¥${it.subtotalJPY.toLocaleString()}</b>`
+          `  ${idx + 1}. <b>${this.escapeHtml(it.productName)}</b> (${this.escapeHtml(it.sku)})\n     ចំនួន: <code>${Number(it.quantity || 1)}</code> × ¥${Number(it.unitPriceJPY || 0).toLocaleString()} = <b>¥${Number(it.subtotalJPY || 0).toLocaleString()}</b>`
       )
       .join('\n');
 
@@ -1220,26 +1360,26 @@ export const storageService = {
       headerTitle,
       `━━━━━━━━━━━━━━━━━━━━`,
       `🆔 <b>លេខកូដកម្មង់ (Order ID):</b> <code>${this.escapeHtml(order.id)}</code>`,
-      `📅 <b>កាលបរិច្ឆេទ (Date):</b> ${this.escapeHtml(new Date(order.createdAt).toLocaleString())}`,
+      `📅 <b>កាលបរិច្ឆេទ (Date):</b> ${this.escapeHtml(new Date(order.createdAt || Date.now()).toLocaleString())}`,
       `👤 <b>អតិថិជន (Customer):</b> <b>${this.escapeHtml(order.customerName)}</b>`,
       `🏷 <b>ប្រភេទ (Type):</b> ${customerTypeBadge}`,
       `📞 <b>លេខទូរស័ព្ទ (Phone):</b> <code>${this.escapeHtml(order.phoneNumber)}</code>`,
       order.telegram ? `💬 <b>Telegram:</b> ${this.escapeHtml(order.telegram)}` : null,
       `📍 <b>អាសយដ្ឋានដឹកជញ្ជូន (Address):</b>\n${this.escapeHtml(fullAddress || '—')}`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `📦 <b>មុខទំនិញដែលបានកម្មង់ (${order.items.length} មុខ):</b>`,
-      itemsLines,
+      `📦 <b>មុខទំនិញដែលបានកម្មង់ (${itemsList.length} មុខ):</b>`,
+      itemsLines || '  • គ្មានមុខទំនិញ',
       `━━━━━━━━━━━━━━━━━━━━`,
-      `💴 <b>សរុបរង (Subtotal):</b> ¥${order.subtotalJPY.toLocaleString()} JPY`,
-      `🚚 <b>ថ្លៃដឹកជញ្ជូន (Shipping):</b> ¥${order.shippingJPY.toLocaleString()} JPY`,
-      `💰 <b>សរុបរួម (Grand Total): ¥${order.totalJPY.toLocaleString()} JPY</b>`,
-      `📌 <b>ស្ថានភាព (Status):</b> <code>${this.escapeHtml(order.status.toUpperCase())}</code>`,
+      `💴 <b>សរុបរង (Subtotal):</b> ¥${Number(order.subtotalJPY || 0).toLocaleString()} JPY`,
+      `🚚 <b>ថ្លៃដឹកជញ្ជូន (Shipping):</b> ¥${Number(order.shippingJPY || 0).toLocaleString()} JPY`,
+      `💰 <b>សរុបរួម (Grand Total): ¥${Number(order.totalJPY || 0).toLocaleString()} JPY</b>`,
+      `📌 <b>ស្ថានភាព (Status):</b> <code>${this.escapeHtml((order.status || 'new').toUpperCase())}</code>`,
       order.remarks ? `📝 <b>ចំណាំ (Remarks):</b> ${this.escapeHtml(order.remarks)}` : null,
     ]
       .filter(Boolean)
       .join('\n');
 
-    return this.sendTelegramMessage(html);
+    return this.sendTelegramMessage(html, overrideConfig);
   },
 
   async sendOrderStatusTelegramNotification(

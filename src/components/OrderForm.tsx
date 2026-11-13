@@ -85,6 +85,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [successOrder, setSuccessOrder] = useState<Order | null>(null);
   const [syncStatusMsg, setSyncStatusMsg] = useState<{ synced: boolean; text: string } | null>(null);
+  const [telegramStatusMsg, setTelegramStatusMsg] = useState<{ sent: boolean; text: string } | null>(null);
+  const [isRetryingTelegram, setIsRetryingTelegram] = useState<boolean>(false);
 
   // Sync initial items when cart changes
   useEffect(() => {
@@ -255,6 +257,25 @@ export const OrderForm: React.FC<OrderFormProps> = ({
       const result = await storageService.saveOrder(newOrder);
 
       setSuccessOrder(result.order);
+
+      if (result.telegramNotified) {
+        setTelegramStatusMsg({
+          sent: true,
+          text:
+            language === 'km'
+              ? 'បានផ្ញើការជូនដំណឹងចូល Telegram Group ដោយស្វ័យប្រវត្តិរួចរាល់!'
+              : 'Order alert sent automatically to Telegram Group!',
+        });
+      } else {
+        setTelegramStatusMsg({
+          sent: false,
+          text:
+            result.telegramError ||
+            (language === 'km'
+              ? 'មិនទាន់អាចផ្ញើចូល Telegram Group ដោយស្វ័យប្រវត្តិបានទេ (សូមពិនិត្យការកំណត់ Telegram ក្នុង Admin Dashboard)'
+              : 'Could not auto-send to Telegram Group. Please check Telegram settings in Admin Dashboard.'),
+        });
+      }
 
       if (result.synced) {
         setSyncStatusMsg({
@@ -773,6 +794,49 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 <span className="text-gojapan-600 font-mono">¥{successOrder.totalJPY.toLocaleString()} JPY</span>
               </div>
             </div>
+
+            {/* Telegram Group Auto-Notification Status */}
+            {telegramStatusMsg && (
+              <div
+                className={`p-3 rounded-lg text-xs flex items-center justify-between gap-2 ${
+                  telegramStatusMsg.sent
+                    ? 'bg-sky-50 text-sky-900 border border-sky-200'
+                    : 'bg-amber-50 text-amber-900 border border-amber-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      telegramStatusMsg.sent ? 'bg-sky-500' : 'bg-amber-500'
+                    }`}
+                  />
+                  <span className="font-medium">{telegramStatusMsg.text}</span>
+                </div>
+                {!telegramStatusMsg.sent && (
+                  <button
+                    type="button"
+                    disabled={isRetryingTelegram}
+                    onClick={async () => {
+                      if (!successOrder) return;
+                      setIsRetryingTelegram(true);
+                      const retryRes = await storageService.sendOrderTelegramNotification(successOrder, true);
+                      setIsRetryingTelegram(false);
+                      setTelegramStatusMsg({
+                        sent: retryRes.success,
+                        text: retryRes.message,
+                      });
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-md shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {isRetryingTelegram
+                      ? '...'
+                      : language === 'km'
+                      ? 'ផ្ញើម្តងទៀត'
+                      : 'Retry'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Google Sheets Sync Indicator */}
             {syncStatusMsg && (

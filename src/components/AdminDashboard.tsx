@@ -206,7 +206,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSendingOrderTelegramId, setIsSendingOrderTelegramId] = useState<string | null>(null);
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [detectedGroups, setDetectedGroups] = useState<TelegramDetectedChat[]>([]);
+  const [copiedTelegramSyncLink, setCopiedTelegramSyncLink] = useState<boolean>(false);
   const [selectedReportPeriod, setSelectedReportPeriod] = useState<ReportPeriod>('weekly');
+
+  // Auto-persist Telegram configuration changes so submitting an order immediately uses latest settings
+  useEffect(() => {
+    const normalizedId = storageService.normalizeGroupChatId(tgChatId);
+    const trimmedToken = tgBotToken.trim();
+    const saved = storageService.getTelegramConfig();
+    if (
+      saved.botToken !== trimmedToken ||
+      saved.chatId !== normalizedId ||
+      saved.enabled !== tgEnabled ||
+      saved.notifyOnNewOrder !== tgNotifyNewOrder ||
+      saved.notifyOnStatusUpdate !== tgNotifyStatusUpdate
+    ) {
+      const updated = storageService.saveTelegramConfig({
+        ...saved,
+        botToken: trimmedToken,
+        chatId: normalizedId,
+        enabled: tgEnabled,
+        notifyOnNewOrder: tgNotifyNewOrder,
+        notifyOnStatusUpdate: tgNotifyStatusUpdate,
+      });
+      setTelegramConfig(updated);
+    }
+  }, [tgBotToken, tgChatId, tgEnabled, tgNotifyNewOrder, tgNotifyStatusUpdate]);
 
   // Customers
   const [customers, setCustomers] = useState<CustomerRecord[]>(() => storageService.getCustomers());
@@ -787,6 +812,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
     storageService.saveAppsScriptConfig(updated);
     setAppsScriptConfig(updated);
+    storageService.syncTelegramConfigToAppsScript().catch(() => {});
     setConnectionResult({
       success: true,
       message: language === 'km' ? 'បានរក្សាទុក URL រួចរាល់' : 'URL saved successfully',
@@ -808,6 +834,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       storageService.saveAppsScriptConfig(updated);
       setAppsScriptConfig(updated);
+      storageService.syncTelegramConfigToAppsScript().catch(() => {});
     }
   };
 
@@ -842,6 +869,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
     storageService.saveTelegramConfig(updated);
     setTelegramConfig(updated);
+    storageService.syncTelegramConfigToAppsScript(updated).catch(() => {});
 
     if (normalizedId && !isGroupChat) {
       const warnMsg =
@@ -886,6 +914,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       storageService.saveTelegramConfig(updated);
       setTelegramConfig(updated);
+      storageService.syncTelegramConfigToAppsScript(updated).catch(() => {});
       setSettingsSavedToast(res.message);
       setTimeout(() => setSettingsSavedToast(null), 3500);
     }
@@ -907,6 +936,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
     storageService.saveTelegramConfig(updated);
     setTelegramConfig(updated);
+    storageService.syncTelegramConfigToAppsScript(updated).catch(() => {});
     const msg =
       language === 'km'
         ? `✅ បានជ្រើសរើស Telegram Group «${group.title}» (${group.chatId}) រួចរាល់!`
@@ -933,6 +963,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
     storageService.saveTelegramConfig(updated);
     setTelegramConfig(updated);
+    storageService.syncTelegramConfigToAppsScript(updated).catch(() => {});
 
     const res = await storageService.testTelegramConnection(tgBotToken.trim(), normalizedId);
     setIsTestingTelegram(false);
@@ -941,6 +972,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (res.success) {
       setSettingsSavedToast(res.message);
       setTimeout(() => setSettingsSavedToast(null), 3500);
+    }
+  };
+
+  const handleCopyTelegramSyncLink = async () => {
+    handleTouchSession();
+    handleSaveTelegramSettings();
+    const url = storageService.generateTelegramSetupShareUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedTelegramSyncLink(true);
+      setTimeout(() => setCopiedTelegramSyncLink(false), 3000);
+    } catch {
+      // Fallback
     }
   };
 
@@ -2477,6 +2521,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <>
                       <Bell className="w-3.5 h-3.5" />
                       <span>{language === 'km' ? 'សាកល្បងផ្ញើសារតេស្ត (Test Alert)' : 'Send Test Notification'}</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!tgBotToken.trim() || !tgChatId.trim()}
+                  onClick={handleCopyTelegramSyncLink}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  title="Copy 1-click setup link to sync Telegram Group config to another device or GitHub Pages"
+                >
+                  {copiedTelegramSyncLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">
+                        {language === 'km' ? 'បានចម្លងតំណភ្ជាប់ Sync!' : 'Copied Sync Link!'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{language === 'km' ? 'ចម្លង Link ភ្ជាប់ទៅឧបករណ៍ផ្សេង' : 'Copy Sync Link'}</span>
                     </>
                   )}
                 </button>
