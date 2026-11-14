@@ -82,6 +82,8 @@ export interface AppsScriptConfig {
   lastSyncedAt?: string;
   isConnected: boolean;
   lastStatus?: string;
+  telegramConfigured?: boolean;
+  telegramChatTitle?: string;
 }
 
 export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';

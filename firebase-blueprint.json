@@ -1,0 +1,189 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Telecom product or service plan offered by GoJapan 24hours",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "nameKm": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "nameEn": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "category": { "type": "string", "enum": ["pocket_wifi", "sim_esim", "fiber_broadband", "hardware"] },
+        "priceJPY": { "type": "number" },
+        "speed": { "type": "string", "maxLength": 100 },
+        "dataQuota": { "type": "string", "maxLength": 100 },
+        "carrier": { "type": "string", "enum": ["Docomo", "SoftBank", "KDDI au", "Multi-Carrier"] },
+        "descriptionKm": { "type": "string", "maxLength": 2000 },
+        "descriptionEn": { "type": "string", "maxLength": 2000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "badge": { "type": "string", "maxLength": 64 },
+        "isActive": { "type": "boolean" },
+        "isRental": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sku", "nameKm", "nameEn", "category", "priceJPY", "speed", "dataQuota", "carrier", "descriptionKm", "descriptionEn", "isActive", "updatedAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer or Agent telecom service order with Japan domestic delivery details (contains PII)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "customerType": { "type": "string", "enum": ["customer", "agent"] },
+        "agentId": { "type": "string", "maxLength": 64 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phoneNumber": { "type": "string", "minLength": 5, "maxLength": 40 },
+        "telegram": { "type": "string", "maxLength": 80 },
+        "provinceCity": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "districtKhan": { "type": "string", "maxLength": 160 },
+        "communeSangkat": { "type": "string", "maxLength": 100 },
+        "village": { "type": "string", "maxLength": 160 },
+        "streetAddress": { "type": "string", "maxLength": 300 },
+        "items": { "type": "array" },
+        "subtotalJPY": { "type": "number" },
+        "shippingJPY": { "type": "number" },
+        "totalJPY": { "type": "number" },
+        "status": { "type": "string", "enum": ["new", "confirmed", "processing", "shipping", "completed", "cancelled"] },
+        "statusHistory": { "type": "array" },
+        "remarks": { "type": "string", "maxLength": 1000 },
+        "syncedToGoogleSheets": { "type": "boolean" },
+        "syncError": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "createdAt", "updatedAt", "customerType", "customerName", "phoneNumber", "provinceCity", "districtKhan", "items", "subtotalJPY", "shippingJPY", "totalJPY", "status", "statusHistory", "syncedToGoogleSheets"]
+    },
+    "OrderTracking": {
+      "title": "OrderTracking",
+      "description": "Sanitized non-PII public order tracking projection keyed by Order ID",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "provinceCity": { "type": "string", "maxLength": 160 },
+        "districtKhan": { "type": "string", "maxLength": 160 },
+        "items": { "type": "array" },
+        "subtotalJPY": { "type": "number" },
+        "shippingJPY": { "type": "number" },
+        "totalJPY": { "type": "number" },
+        "status": { "type": "string", "enum": ["new", "confirmed", "processing", "shipping", "completed", "cancelled"] },
+        "statusHistory": { "type": "array" },
+        "syncedToGoogleSheets": { "type": "boolean" }
+      },
+      "required": ["id", "createdAt", "updatedAt", "provinceCity", "items", "totalJPY", "status", "statusHistory", "syncedToGoogleSheets"]
+    },
+    "CustomerRecord": {
+      "title": "CustomerRecord",
+      "description": "Admin-managed customer profile and lifetime metrics (contains PII)",
+      "type": "object",
+      "properties": {
+        "phoneNumber": { "type": "string", "minLength": 5, "maxLength": 40 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerType": { "type": "string", "enum": ["customer", "agent"] },
+        "telegram": { "type": "string", "maxLength": 80 },
+        "provinceCity": { "type": "string", "maxLength": 160 },
+        "totalOrders": { "type": "number" },
+        "totalSpentJPY": { "type": "number" },
+        "lastOrderDate": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phoneNumber", "customerName", "customerType", "provinceCity", "totalOrders", "totalSpentJPY", "lastOrderDate", "updatedAt"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global storefront branding, announcements, FAQs, and public contact info",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "taglineKm": { "type": "string", "maxLength": 300 },
+        "taglineEn": { "type": "string", "maxLength": 300 },
+        "announcementKm": { "type": "string", "maxLength": 500 },
+        "announcementEn": { "type": "string", "maxLength": 500 },
+        "showAnnouncement": { "type": "boolean" },
+        "announcementsList": { "type": "array" },
+        "faqs": { "type": "array" },
+        "hotline": { "type": "string", "maxLength": 120 },
+        "telegramUsername": { "type": "string", "maxLength": 80 },
+        "facebookUrl": { "type": "string", "maxLength": 300 },
+        "youtubeUrl": { "type": "string", "maxLength": 300 },
+        "lineUrl": { "type": "string", "maxLength": 300 },
+        "heroHeadlineKm": { "type": "string", "maxLength": 240 },
+        "heroHeadlineEn": { "type": "string", "maxLength": 240 },
+        "heroSubheadlineKm": { "type": "string", "maxLength": 600 },
+        "heroSubheadlineEn": { "type": "string", "maxLength": 600 },
+        "defaultShippingJPY": { "type": "number" },
+        "companyEmail": { "type": "string", "maxLength": 160 },
+        "officeAddressKm": { "type": "string", "maxLength": 300 },
+        "officeAddressEn": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["siteName", "showAnnouncement", "hotline", "telegramUsername", "defaultShippingJPY", "updatedAt"]
+    },
+    "TelegramConfig": {
+      "title": "TelegramConfig",
+      "description": "Admin-only Telegram Bot Token and Group notification configuration",
+      "type": "object",
+      "properties": {
+        "botToken": { "type": "string", "maxLength": 200 },
+        "chatId": { "type": "string", "maxLength": 80 },
+        "chatTitle": { "type": "string", "maxLength": 160 },
+        "chatType": { "type": "string", "enum": ["group", "supergroup", "channel", "private"] },
+        "enabled": { "type": "boolean" },
+        "notifyOnNewOrder": { "type": "boolean" },
+        "notifyOnStatusUpdate": { "type": "boolean" },
+        "lastNotifiedAt": { "type": "string", "maxLength": 64 },
+        "lastReportSentAt": { "type": "string", "maxLength": 64 },
+        "lastStatus": { "type": "string", "maxLength": 240 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["botToken", "chatId", "enabled", "notifyOnNewOrder", "notifyOnStatusUpdate", "updatedAt"]
+    },
+    "AppsScriptConfig": {
+      "title": "AppsScriptConfig",
+      "description": "Google Sheets Apps Script Web App URL integration configuration",
+      "type": "object",
+      "properties": {
+        "webAppUrl": { "type": "string", "maxLength": 500 },
+        "lastSyncedAt": { "type": "string", "maxLength": 64 },
+        "isConnected": { "type": "boolean" },
+        "lastStatus": { "type": "string", "maxLength": 240 },
+        "telegramConfigured": { "type": "boolean" },
+        "telegramChatTitle": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["webAppUrl", "isConnected", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Storefront catalog products; active products are publicly readable, writes restricted to Admin"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Full customer and agent orders containing PII; strictly Admin-readable, validated creation for orders"
+    },
+    "/order_tracking/{orderId}": {
+      "schema": { "$ref": "#/entities/OrderTracking" },
+      "description": "Non-PII order status timeline lookup by exact Order ID (no list queries allowed)"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/CustomerRecord" },
+      "description": "Admin-only customer profile records containing PII"
+    },
+    "/site_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Global storefront configuration document (doc id 'default')"
+    },
+    "/admin_configs/{configId}": {
+      "schema": { "$ref": "#/entities/TelegramConfig" },
+      "description": "Sensitive Admin-only integration configs including Telegram Bot Token ('telegram')"
+    },
+    "/integration_public/{configId}": {
+      "schema": { "$ref": "#/entities/AppsScriptConfig" },
+      "description": "Non-secret Google Apps Script Web App relay URL ('apps_script') used by storefront checkout across devices"
+    }
+  }
+}

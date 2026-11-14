@@ -1,5 +1,6 @@
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
 import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, NewsTickerItem, Order, OrderStatus, Product, ReportPeriod, SalesReportSummary, SiteSettings, TelegramConfig, TelegramDetectedChat } from '../types';
+import { firestoreSync } from './firestoreSync';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'gojapan_products_v1',
@@ -311,6 +312,10 @@ export const storageService = {
     }
   },
 
+  setProductsCache(products: Product[]): void {
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+  },
+
   saveProduct(product: Product): Product {
     const products = this.getProducts();
     const existingIndex = products.findIndex((p) => p.id === product.id);
@@ -320,17 +325,24 @@ export const storageService = {
       products.unshift(product);
     }
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    firestoreSync.saveProductAdmin(product).catch(() => {});
     return product;
   },
 
   deleteProduct(id: string): void {
     const products = this.getProducts().filter((p) => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    firestoreSync.deleteProductAdmin(id).catch(() => {});
   },
 
   resetProductsToDefault(): Product[] {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+    INITIAL_PRODUCTS.forEach((p) => firestoreSync.saveProductAdmin(p).catch(() => {}));
     return INITIAL_PRODUCTS;
+  },
+
+  setOrdersCache(orders: Order[]): void {
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
   },
 
   // ORDERS
@@ -366,6 +378,18 @@ export const storageService = {
     );
   },
 
+  async fetchOrderByIdCloud(id: string): Promise<Order | undefined> {
+    const local = this.getOrderById(id);
+    if (local) return local;
+    try {
+      const cloudOrder = await firestoreSync.fetchOrderTrackingById(id);
+      if (cloudOrder) return cloudOrder;
+    } catch {
+      // silent fallback
+    }
+    return undefined;
+  },
+
   async saveOrder(order: Order): Promise<{
     order: Order;
     synced: boolean;
@@ -390,7 +414,7 @@ export const storageService = {
       ];
     }
 
-    // 1. Save immediately to localStorage so order is never lost
+    // 1. Save immediately to localStorage + Cloud Firestore atomically so order is never lost across devices
     if (existingIndex >= 0) {
       orders[existingIndex] = finalOrder;
     } else {
@@ -398,10 +422,17 @@ export const storageService = {
     }
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
 
-    // 2. Automatically notify Telegram Group directly (AWAIT so it finishes reliably!)
+    try {
+      await firestoreSync.createOrderAtomic(finalOrder);
+    } catch {
+      // Offline / fallback still preserves order in localStorage
+    }
+
+    // 2. Automatically notify Telegram Group directly (when Admin Bot Token is active on this browser)
     let telegramNotified = false;
     let telegramError: string | undefined;
     const tgConfig = this.getTelegramConfig();
+    const appsCfgSnapshot = this.getAppsScriptConfig();
 
     if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
       const tgRes = await this.sendOrderTelegramNotification(finalOrder, isNewOrder, tgConfig);
@@ -409,15 +440,9 @@ export const storageService = {
       if (!tgRes.success) {
         telegramError = tgRes.message;
       }
-    } else if (!tgConfig.enabled) {
-      telegramError = 'ការជូនដំណឹង Telegram ត្រូវបានបិទនៅក្នុង Admin Dashboard';
-    } else if (!tgConfig.notifyOnNewOrder) {
-      telegramError = 'មុខងារជូនដំណឹងពេលមានការកម្មង់ថ្មីត្រូវបានបិទ';
-    } else {
-      telegramError = 'មិនទាន់បានកំណត់ Telegram Bot Token ឬ Group ID នៅលើ Browser នេះទេ';
     }
 
-    // 3. Attempt direct sync to Google Apps Script if URL configured (also acts as server-side Telegram backup)
+    // 3. Attempt direct sync to Google Apps Script (synced across all devices via Firestore integration_public)
     const config = this.getAppsScriptConfig();
     let synced = false;
     let syncError: string | undefined;
@@ -448,12 +473,14 @@ export const storageService = {
               telegramNotified = true;
               telegramError = undefined;
             }
-            this.saveAppsScriptConfig({
-              ...config,
-              isConnected: true,
-              lastSyncedAt: new Date().toISOString(),
-              lastStatus: 'Connected and synchronized',
-            });
+            if (firestoreSync.isCloudAdminActive()) {
+              this.saveAppsScriptConfig({
+                ...config,
+                isConnected: true,
+                lastSyncedAt: new Date().toISOString(),
+                lastStatus: 'Connected and synchronized',
+              });
+            }
           } else {
             syncError = resJson.error || resJson.message || 'Apps Script returned failure';
           }
@@ -468,9 +495,27 @@ export const storageService = {
       syncError = 'Apps Script Web App URL not configured yet';
     }
 
+    if (!telegramNotified && !telegramError) {
+      if (!tgConfig.enabled) {
+        telegramError = 'ការជូនដំណឹង Telegram ត្រូវបានបិទនៅក្នុង Admin Dashboard';
+      } else if (!tgConfig.notifyOnNewOrder) {
+        telegramError = 'មុខងារជូនដំណឹងពេលមានការកម្មង់ថ្មីត្រូវបានបិទ';
+      } else if (appsCfgSnapshot.telegramConfigured && !config.webAppUrl) {
+        telegramError = 'ការកម្មង់ត្រូវបានរក្សាទុកក្នុង Cloud ហើយ — សូមភ្ជាប់ Google Apps Script URL ម្តងក្នុង Admin ដើម្បីផ្ញើ Telegram ពីគ្រប់ឧបករណ៍អតិថិជនដោយស្វ័យប្រវត្តិ';
+      } else if (config.webAppUrl) {
+        telegramError = 'បានបញ្ជូនទៅ Google Apps Script រួចរាល់ — សូមពិនិត្យ Google Apps Script (Save Telegram Config) ម្តងក្នុង Admin';
+      } else {
+        telegramError = 'មិនទាន់បានកំណត់ Telegram Bot Token ឬ Group ID នៅក្នុង Admin Dashboard ទេ';
+      }
+    }
+
     finalOrder.syncedToGoogleSheets = synced;
     if (syncError && !synced) {
       finalOrder.syncError = syncError;
+    }
+
+    if (firestoreSync.isCloudAdminActive()) {
+      firestoreSync.updateOrderSyncStatusAdmin(finalOrder.id, synced, syncError).catch(() => {});
     }
 
     // Update order with sync flags
@@ -555,6 +600,7 @@ export const storageService = {
     });
 
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    firestoreSync.updateOrderAdmin(order).catch(() => {});
 
     // Also update Google Sheets if connected
     const config = this.getAppsScriptConfig();
@@ -599,6 +645,7 @@ export const storageService = {
       orders.unshift(finalOrder);
     }
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    firestoreSync.updateOrderAdmin(finalOrder).catch(() => {});
 
     if (previousStatus && previousStatus !== finalOrder.status) {
       const tgConfig = this.getTelegramConfig();
@@ -639,6 +686,7 @@ export const storageService = {
     };
     orders.unshift(finalOrder);
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    firestoreSync.createOrderAtomic(finalOrder).catch(() => {});
 
     const tgConfig = this.getTelegramConfig();
     if (tgConfig.enabled && tgConfig.notifyOnNewOrder && tgConfig.botToken && tgConfig.chatId) {
@@ -651,9 +699,14 @@ export const storageService = {
   deleteOrder(orderId: string): void {
     const orders = this.getOrders().filter((o) => o.id !== orderId);
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    firestoreSync.deleteOrderAdmin(orderId).catch(() => {});
   },
 
   // CUSTOMERS DERIVATION & OVERRIDES
+  setCustomerOverridesCache(overrides: Record<string, CustomerRecord>): void {
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS_OVERRIDE, JSON.stringify(overrides));
+  },
+
   getCustomerOverrides(): Record<string, CustomerRecord> {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS_OVERRIDE);
@@ -667,6 +720,7 @@ export const storageService = {
     const overrides = this.getCustomerOverrides();
     overrides[customer.phoneNumber] = customer;
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS_OVERRIDE, JSON.stringify(overrides));
+    firestoreSync.saveCustomerAdmin(customer).catch(() => {});
     return customer;
   },
 
@@ -674,6 +728,7 @@ export const storageService = {
     const overrides = this.getCustomerOverrides();
     delete overrides[phone];
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS_OVERRIDE, JSON.stringify(overrides));
+    firestoreSync.deleteCustomerAdmin(phone).catch(() => {});
   },
 
   getCustomers(): CustomerRecord[] {
@@ -751,6 +806,13 @@ export const storageService = {
     return DEFAULT_SITE_SETTINGS;
   },
 
+  setSiteSettingsCache(settings: SiteSettings): void {
+    localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(settings));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gojapan_site_settings_updated', { detail: settings }));
+    }
+  },
+
   saveSiteSettings(settings: SiteSettings): SiteSettings {
     const updatedSettings: SiteSettings = { ...settings };
     if (updatedSettings.announcementsList && updatedSettings.announcementsList.length > 0) {
@@ -762,6 +824,7 @@ export const storageService = {
       }
     }
     localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(updatedSettings));
+    firestoreSync.saveSiteSettingsAdmin(updatedSettings).catch(() => {});
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('gojapan_site_settings_updated', { detail: updatedSettings }));
     }
@@ -770,6 +833,7 @@ export const storageService = {
 
   resetSiteSettings(): SiteSettings {
     localStorage.setItem(STORAGE_KEYS.SITE_SETTINGS, JSON.stringify(DEFAULT_SITE_SETTINGS));
+    firestoreSync.saveSiteSettingsAdmin(DEFAULT_SITE_SETTINGS).catch(() => {});
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('gojapan_site_settings_updated', { detail: DEFAULT_SITE_SETTINGS }));
     }
@@ -777,6 +841,10 @@ export const storageService = {
   },
 
   // APPS SCRIPT CONFIG
+  setAppsScriptConfigCache(config: AppsScriptConfig): void {
+    localStorage.setItem(STORAGE_KEYS.APPS_SCRIPT, JSON.stringify(config));
+  },
+
   getAppsScriptConfig(): AppsScriptConfig {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT);
@@ -792,7 +860,14 @@ export const storageService = {
   },
 
   saveAppsScriptConfig(config: AppsScriptConfig): void {
-    localStorage.setItem(STORAGE_KEYS.APPS_SCRIPT, JSON.stringify(config));
+    const tg = this.getTelegramConfig();
+    const enriched: AppsScriptConfig = {
+      ...config,
+      telegramConfigured: Boolean(tg.botToken && tg.chatId),
+      telegramChatTitle: tg.chatTitle || config.telegramChatTitle,
+    };
+    localStorage.setItem(STORAGE_KEYS.APPS_SCRIPT, JSON.stringify(enriched));
+    firestoreSync.saveAppsScriptConfigAdmin(enriched).catch(() => {});
   },
 
   async testAppsScriptConnection(url: string): Promise<{ success: boolean; message: string; details?: any }> {
@@ -864,6 +939,7 @@ export const storageService = {
           order.syncedToGoogleSheets = true;
           delete order.syncError;
           syncedCount++;
+          firestoreSync.updateOrderSyncStatusAdmin(order.id, true).catch(() => {});
         } else {
           failedCount++;
         }
@@ -1002,6 +1078,16 @@ export const storageService = {
     return defaultConfig;
   },
 
+  setTelegramConfigCache(config: TelegramConfig): TelegramConfig {
+    const normalized: TelegramConfig = {
+      ...config,
+      botToken: String(config.botToken || '').trim(),
+      chatId: this.normalizeGroupChatId(String(config.chatId || '')),
+    };
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(normalized));
+    return normalized;
+  },
+
   saveTelegramConfig(config: TelegramConfig): TelegramConfig {
     const normalized: TelegramConfig = {
       ...config,
@@ -1009,6 +1095,14 @@ export const storageService = {
       chatId: this.normalizeGroupChatId(String(config.chatId || '')),
     };
     localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(normalized));
+    firestoreSync.saveTelegramConfigAdmin(normalized).catch(() => {});
+    const appsCfg = this.getAppsScriptConfig();
+    firestoreSync
+      .saveAppsScriptConfigAdmin(appsCfg, {
+        telegramConfigured: Boolean(normalized.botToken && normalized.chatId),
+        telegramChatTitle: normalized.chatTitle,
+      })
+      .catch(() => {});
     return normalized;
   },
 

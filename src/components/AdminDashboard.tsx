@@ -35,7 +35,16 @@ import {
   Bell,
   Calendar,
   BarChart3,
+  Cloud,
 } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
+import {
+  ADMIN_EMAIL,
+  auth,
+  isBootstrappedAdminUser,
+  signInAdminWithGoogle,
+  signOutFirebaseAdmin,
+} from '../firebase';
 import { storageService, DEFAULT_FAQS } from '../services/storageService';
 import { AppsScriptConfig, CustomerRecord, FAQCategory, FAQItem, Language, NewsTickerItem, Order, OrderStatus, Product, ProductCategory, ReportPeriod, SiteSettings, TelegramConfig, TelegramDetectedChat } from '../types';
 import { translations } from '../utils/translations';
@@ -64,7 +73,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const t = translations[language];
 
   // Auth state
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => storageService.isAdminLoggedIn());
+  const [isCloudAdmin, setIsCloudAdmin] = useState<boolean>(() =>
+    isBootstrappedAdminUser(auth.currentUser)
+  );
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
+    () => storageService.isAdminLoggedIn() || isBootstrappedAdminUser(auth.currentUser)
+  );
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('admin');
   const [password, setPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -73,9 +88,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     storageService.getAdminSessionRemainingSeconds()
   );
 
-  // 1-minute inactivity countdown effect
   useEffect(() => {
-    if (!isLoggedIn) return;
+    const unsub = onAuthStateChanged(auth, (user) => {
+      const cloudOk = isBootstrappedAdminUser(user);
+      setIsCloudAdmin(cloudOk);
+      if (cloudOk) {
+        setIsLoggedIn(true);
+        setSessionTimeoutAlert(null);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // 1-minute inactivity countdown effect (only applies to local password mode; Google Cloud sessions persist)
+  useEffect(() => {
+    if (!isLoggedIn || isCloudAdmin) return;
 
     const interval = setInterval(() => {
       const sec = storageService.getAdminSessionRemainingSeconds();
@@ -93,7 +120,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isLoggedIn, language]);
+  }, [isLoggedIn, isCloudAdmin, language]);
 
   // Touch session manually or programmatically
   const handleTouchSession = () => {
@@ -209,10 +236,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [copiedTelegramSyncLink, setCopiedTelegramSyncLink] = useState<boolean>(false);
   const [selectedReportPeriod, setSelectedReportPeriod] = useState<ReportPeriod>('weekly');
 
-  // Auto-persist Telegram configuration changes so submitting an order immediately uses latest settings
+  const hasLocalTelegramEditRef = React.useRef<boolean>(false);
+
+  // Hydrate Admin UI inputs whenever Cloud Firestore updates configs across devices
   useEffect(() => {
+    const handleCloudSync = () => {
+      const freshApps = storageService.getAppsScriptConfig();
+      setAppsScriptConfig(freshApps);
+      if (freshApps.webAppUrl) {
+        setInputUrl(freshApps.webAppUrl);
+      }
+
+      const freshTg = storageService.getTelegramConfig();
+      setTelegramConfig(freshTg);
+      if (freshTg.botToken || freshTg.chatId) {
+        hasLocalTelegramEditRef.current = false;
+        setTgBotToken(freshTg.botToken || '');
+        setTgChatId(freshTg.chatId || '');
+        setTgEnabled(freshTg.enabled ?? true);
+        setTgNotifyNewOrder(freshTg.notifyOnNewOrder ?? true);
+        setTgNotifyStatusUpdate(freshTg.notifyOnStatusUpdate ?? true);
+      }
+
+      setCustomers(storageService.getCustomers());
+    };
+
+    window.addEventListener('gojapan_cloud_sync_updated', handleCloudSync);
+    return () => window.removeEventListener('gojapan_cloud_sync_updated', handleCloudSync);
+  }, []);
+
+  // Auto-persist Telegram configuration changes only after explicit admin edit (never wipe cloud config on mount)
+  useEffect(() => {
+    if (!hasLocalTelegramEditRef.current) return;
     const normalizedId = storageService.normalizeGroupChatId(tgChatId);
     const trimmedToken = tgBotToken.trim();
+    if (!trimmedToken && !normalizedId) return;
+
     const saved = storageService.getTelegramConfig();
     if (
       saved.botToken !== trimmedToken ||
@@ -276,6 +335,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => clearInterval(interval);
   }, [isLoggedIn, isAutoPolling, onOrdersUpdated, onProductsUpdated]);
 
+  // GOOGLE CLOUD ADMIN SIGN-IN (PERMANENT CROSS-DEVICE SYNC)
+  const handleGoogleSignIn = async () => {
+    setLoginError(null);
+    setIsGoogleSigningIn(true);
+    try {
+      const user = await signInAdminWithGoogle();
+      if (!isBootstrappedAdminUser(user)) {
+        await signOutFirebaseAdmin();
+        setLoginError(
+          language === 'km'
+            ? `គណនី Google (${user.email || 'Unknown'}) មិនមែនជា Admin ដែលបានអនុញ្ញាត (${ADMIN_EMAIL}) ទេ។`
+            : `Google account (${user.email || 'Unknown'}) is not authorized as Admin (${ADMIN_EMAIL}).`
+        );
+        return;
+      }
+      setIsCloudAdmin(true);
+      setIsLoggedIn(true);
+      setSessionTimeoutAlert(null);
+      setSettingsSavedToast(
+        language === 'km'
+          ? '☁️ បានភ្ជាប់ Cloud Sync ជាមួយ Google Account ជោគជ័យ — ការកំណត់ Telegram & Google Sheet នឹងរក្សាទុកជារៀងរហូតគ្រប់ឧបករណ៍!'
+          : '☁️ Google Cloud Sync active — Telegram & Google Sheets settings are permanently synced across all devices!'
+      );
+      setTimeout(() => setSettingsSavedToast(null), 5000);
+    } catch (err: unknown) {
+      const errObj = err as Error;
+      if (!errObj.message?.includes('popup-closed-by-user')) {
+        setLoginError(
+          language === 'km'
+            ? `មិនអាចចូលប្រើដោយ Google បានទេ៖ ${errObj.message}`
+            : `Google sign-in failed: ${errObj.message}`
+        );
+      }
+    } finally {
+      setIsGoogleSigningIn(false);
+    }
+  };
+
   // LOGIN HANDLER
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -296,8 +393,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     storageService.logoutAdmin();
+    await signOutFirebaseAdmin().catch(() => {});
+    setIsCloudAdmin(false);
     setIsLoggedIn(false);
     setSessionTimeoutAlert(null);
   };
@@ -1206,6 +1305,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
+          {/* Primary Cross-Device Google Cloud Admin Sign-In */}
+          <div className="space-y-2.5">
+            <button
+              type="button"
+              disabled={isGoogleSigningIn}
+              onClick={handleGoogleSignIn}
+              className="w-full py-2.5 px-4 flex items-center justify-center gap-2.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-xs transition-all cursor-pointer disabled:opacity-60"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z" />
+                <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z" />
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z" />
+              </svg>
+              <span>
+                {isGoogleSigningIn
+                  ? language === 'km' ? 'កំពុងភ្ជាប់ Google Account...' : 'Connecting Google...'
+                  : language === 'km'
+                  ? 'ចូលប្រើដោយ Google (Sync រហូតគ្រប់ឧបករណ៍)'
+                  : 'Sign in with Google (Permanent Cloud Sync)'}
+              </span>
+            </button>
+            <p className="text-[11px] text-center text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 font-medium">
+              {language === 'km'
+                ? '☁️ ភ្ជាប់ Telegram Token & Google Sheet តែម្តង ប្រើបានគ្រប់ឧបករណ៍ដោយស្វ័យប្រវត្តិ!'
+                : '☁️ Connect Telegram Token & Google Sheet once — synced automatically on every device!'}
+            </p>
+          </div>
+
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-slate-200"></div>
+            <span className="flex-shrink mx-3 text-[11px] text-slate-400 font-medium">
+              {language === 'km' ? 'ឬ ចូលប្រើដោយលេខសម្ងាត់បណ្តោះអាសន្ន' : 'or local admin login'}
+            </span>
+            <div className="flex-grow border-t border-slate-200"></div>
+          </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1304,39 +1440,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </div>
 
-          {/* 1-Minute Inactivity Auto-Timeout Countdown */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-colors ${
-              remainingSeconds <= 15
-                ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
-                : remainingSeconds <= 30
-                ? 'bg-amber-50 text-amber-700 border-amber-300'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-300'
-            }`}
-            title={
-              language === 'km'
-                ? 'ប្រព័ន្ធនឹងចាកចេញដោយស្វ័យប្រវត្តិ ប្រសិនបើគ្មានសកម្មភាពលើសពី ១នាទី (រាប់ឡើងវិញពេលមានសកម្មភាព)'
-                : 'Auto-logout occurs after 1 minute of inactivity. Any click, keypress, or mouse action resets the timer.'
-            }
-          >
-            <Clock className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {language === 'km' ? 'ពេលអសកម្ម:' : 'Idle:'}{' '}
-              {String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:
-              {String(remainingSeconds % 60).padStart(2, '0')}
-            </span>
-          </div>
+          {/* Cloud Sync Badge or Connect Button */}
+          {isCloudAdmin ? (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold"
+              title={language === 'km' ? 'ទិន្នន័យ Telegram, Google Sheets និងការកម្មង់ត្រូវបានរក្សាទុកក្នុង Cloud គ្រប់ឧបករណ៍' : 'Synced permanently across all devices via Cloud Firestore'}
+            >
+              <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>{language === 'km' ? 'Cloud Sync រហូត' : 'Cloud Synced'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isGoogleSigningIn}
+                onClick={handleGoogleSignIn}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors cursor-pointer"
+                title={language === 'km' ? 'ចុចដើម្បីភ្ជាប់ Google Cloud Sync រក្សាទុក Telegram & Google Sheet ជាអចិន្ត្រៃយ៍' : 'Connect Google Cloud Sync to persist settings across all devices'}
+              >
+                <Cloud className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>{language === 'km' ? 'ភ្ជាប់ Cloud Sync' : 'Connect Cloud Sync'}</span>
+              </button>
 
-          {/* Quick Reset / Extend Inactivity Timer */}
-          <button
-            type="button"
-            onClick={handleTouchSession}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-            title={language === 'km' ? 'រាប់ឡើងវិញ ១នាទី (+1 min)' : 'Reset inactivity timer (+1 min)'}
-          >
-            <RefreshCw className="w-3 h-3 text-slate-500" />
-            <span className="hidden sm:inline">{language === 'km' ? '+១នាទី' : '+1 min'}</span>
-          </button>
+              {/* 1-Minute Inactivity Auto-Timeout Countdown (local login only) */}
+              <div
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-colors ${
+                  remainingSeconds <= 15
+                    ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
+                    : remainingSeconds <= 30
+                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:
+                  {String(remainingSeconds % 60).padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Quick Google Sheets status */}
           <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs">
@@ -2302,6 +2445,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
+            {/* Permanent Cross-Device Cloud Sync Banner */}
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                isCloudAdmin
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <Cloud className={`w-4 h-4 shrink-0 mt-0.5 ${isCloudAdmin ? 'text-emerald-600' : 'text-amber-600'}`} />
+                <div>
+                  <p className="font-bold">
+                    {isCloudAdmin
+                      ? language === 'km'
+                        ? '☁️ Cloud Firestore Sync កំពុងដំណើរការ — ភ្ជាប់តែម្តង ប្រើបានរហូតគ្រប់ឧបករណ៍!'
+                        : '☁️ Cloud Firestore Sync Active — Connected Once, Works Permanently Across All Devices!'
+                      : language === 'km'
+                      ? '⚠️ លោកអ្នកកំពុងប្រើទិន្នន័យលើឧបករណ៍នេះតែប៉ុណ្ណោះ (Local Mode)'
+                      : '⚠️ Currently in Local Browser Mode — Connect Google Account to Sync Forever Across Devices'}
+                  </p>
+                  <p className="opacity-85 mt-0.5">
+                    {isCloudAdmin
+                      ? language === 'km'
+                        ? 'រាល់ Telegram Token, Group ID និង Google Sheet URL ដែលអ្នករក្សាទុកនៅទីនេះ នឹងត្រូវបាន Sync ដោយស្វ័យប្រវត្តិទៅកាន់ទូរស័ព្ទ និងកុំព្យូទ័រផ្សេងទៀតទាំងអស់។'
+                        : 'Your Telegram Bot Token, Group ID, and Google Apps Script URL are stored in Cloud Firestore and auto-loaded on every phone, browser, and GitHub Pages session.'
+                      : language === 'km'
+                      ? 'ចុចប៊ូតុងខាងស្តាំដើម្បីភ្ជាប់ Google Account រួចរក្សាទុកម្តងទៀត នោះវានឹងចងចាំជាអចិន្ត្រៃយ៍គ្រប់ឧបករណ៍។'
+                      : 'Sign in with Google to save your Telegram & Google Sheets configuration permanently across all devices.'}
+                  </p>
+                </div>
+              </div>
+              {!isCloudAdmin && (
+                <button
+                  type="button"
+                  disabled={isGoogleSigningIn}
+                  onClick={handleGoogleSignIn}
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs whitespace-nowrap cursor-pointer shrink-0"
+                >
+                  {language === 'km' ? '☁️ ភ្ជាប់ Google Cloud ឥឡូវ' : '☁️ Connect Google Cloud'}
+                </button>
+              )}
+            </div>
+
             {/* Warning banner if current chatId is a positive private chat ID instead of a negative Group ID */}
             {tgChatId.trim() && !tgChatId.trim().startsWith('-') && !tgChatId.trim().startsWith('@') && !/^100\d{9,}$/.test(tgChatId.trim()) && (
               <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2340,7 +2526,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="text"
                   value={tgBotToken}
-                  onChange={(e) => setTgBotToken(e.target.value)}
+                  onChange={(e) => {
+                    hasLocalTelegramEditRef.current = true;
+                    setTgBotToken(e.target.value);
+                  }}
                   placeholder="1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
                 />
@@ -2361,7 +2550,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <input
                     type="text"
                     value={tgChatId}
-                    onChange={(e) => setTgChatId(e.target.value)}
+                    onChange={(e) => {
+                      hasLocalTelegramEditRef.current = true;
+                      setTgChatId(e.target.value);
+                    }}
                     placeholder="e.g. -1001234567890 or -987654321"
                     className="flex-1 px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
                   />
@@ -2455,7 +2647,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="checkbox"
                   checked={tgEnabled}
-                  onChange={(e) => setTgEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    hasLocalTelegramEditRef.current = true;
+                    setTgEnabled(e.target.checked);
+                  }}
                   className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
                 />
                 <span>
@@ -2469,7 +2664,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="checkbox"
                   checked={tgNotifyNewOrder}
-                  onChange={(e) => setTgNotifyNewOrder(e.target.checked)}
+                  onChange={(e) => {
+                    hasLocalTelegramEditRef.current = true;
+                    setTgNotifyNewOrder(e.target.checked);
+                  }}
                   className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
                 />
                 <span>
@@ -2483,7 +2681,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="checkbox"
                   checked={tgNotifyStatusUpdate}
-                  onChange={(e) => setTgNotifyStatusUpdate(e.target.checked)}
+                  onChange={(e) => {
+                    hasLocalTelegramEditRef.current = true;
+                    setTgNotifyStatusUpdate(e.target.checked);
+                  }}
                   className="w-4 h-4 rounded text-gojapan-600 focus:ring-gojapan-500 border-slate-300"
                 />
                 <span>

@@ -76,19 +76,26 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
   const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  const handleSearch = (queryToUse?: string) => {
+  const handleSearch = async (queryToUse?: string) => {
     const q = (queryToUse !== undefined ? queryToUse : searchQuery).trim();
     if (!q) return;
 
     setHasSearched(true);
-    // Find either direct ID or match phone
+    // Find either direct ID or match phone locally first
     const single = storageService.getOrderById(q);
     if (single) {
       setSelectedOrder(single);
-    } else {
-      const results = storageService.findOrdersByPhoneOrId(q);
-      setSelectedOrder(results.length > 0 ? results[0] : null);
+      return;
     }
+    const results = storageService.findOrdersByPhoneOrId(q);
+    if (results.length > 0) {
+      setSelectedOrder(results[0]);
+      return;
+    }
+
+    // Fallback to Cloud Firestore non-PII /order_tracking/{orderId} across devices
+    const cloudOrder = await storageService.fetchOrderByIdCloud(q);
+    setSelectedOrder(cloudOrder || null);
   };
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ProductCard } from './components/ProductCard';
@@ -8,6 +9,8 @@ import { OrderTracking } from './components/OrderTracking';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AppsScriptModal } from './components/AppsScriptModal';
 import { FAQSection } from './components/FAQSection';
+import { auth, isBootstrappedAdminUser } from './firebase';
+import { firestoreSync } from './services/firestoreSync';
 import { storageService } from './services/storageService';
 import { Language, Order, OrderItem, Product, ProductCategory, SiteSettings } from './types';
 import { translations } from './utils/translations';
@@ -26,12 +29,95 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [trackingOrderId, setTrackingOrderId] = useState<string>('');
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
+  const [isCloudAdmin, setIsCloudAdmin] = useState<boolean>(() =>
+    isBootstrappedAdminUser(auth.currentUser)
+  );
 
   // Home Storefront Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
 
   const t = translations[language];
+
+  // Real-time Cloud Firestore synchronization (Public storefront + Admin integrations/data)
+  useEffect(() => {
+    const unsubPublicProducts = firestoreSync.subscribePublicProducts((cloudProducts) => {
+      if (!isBootstrappedAdminUser(auth.currentUser)) {
+        storageService.setProductsCache(cloudProducts);
+        setProducts(cloudProducts);
+      }
+    });
+
+    const unsubSiteSettings = firestoreSync.subscribeSiteSettings((cloudSettings) => {
+      storageService.setSiteSettingsCache(cloudSettings);
+      setSiteSettings(cloudSettings);
+      window.dispatchEvent(new CustomEvent('gojapan_cloud_sync_updated'));
+    });
+
+    const unsubPublicAppsScript = firestoreSync.subscribePublicAppsScriptConfig((cloudAppsCfg) => {
+      storageService.setAppsScriptConfigCache(cloudAppsCfg);
+      window.dispatchEvent(new CustomEvent('gojapan_cloud_sync_updated'));
+    });
+
+    let unsubAdminProducts: (() => void) | null = null;
+    let unsubAdminOrders: (() => void) | null = null;
+    let unsubAdminCustomers: (() => void) | null = null;
+    let unsubAdminTelegram: (() => void) | null = null;
+
+    const cleanupAdminSubs = () => {
+      if (unsubAdminProducts) { unsubAdminProducts(); unsubAdminProducts = null; }
+      if (unsubAdminOrders) { unsubAdminOrders(); unsubAdminOrders = null; }
+      if (unsubAdminCustomers) { unsubAdminCustomers(); unsubAdminCustomers = null; }
+      if (unsubAdminTelegram) { unsubAdminTelegram(); unsubAdminTelegram = null; }
+    };
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      const adminActive = isBootstrappedAdminUser(user);
+      setIsCloudAdmin(adminActive);
+      cleanupAdminSubs();
+
+      if (adminActive) {
+        firestoreSync
+          .bootstrapCloudFromLocalIfEmpty({
+            products: storageService.getProducts(),
+            orders: storageService.getOrders(),
+            siteSettings: storageService.getSiteSettings(),
+            telegramConfig: storageService.getTelegramConfig(),
+            appsScriptConfig: storageService.getAppsScriptConfig(),
+          })
+          .catch(() => {});
+
+        unsubAdminProducts = firestoreSync.subscribeAdminProducts((cloudProducts) => {
+          storageService.setProductsCache(cloudProducts);
+          setProducts(cloudProducts);
+        });
+
+        unsubAdminOrders = firestoreSync.subscribeAdminOrders((cloudOrders) => {
+          storageService.setOrdersCache(cloudOrders);
+          setOrders(cloudOrders);
+          window.dispatchEvent(new CustomEvent('gojapan_cloud_sync_updated'));
+        });
+
+        unsubAdminCustomers = firestoreSync.subscribeAdminCustomers((cloudCustomers) => {
+          storageService.setCustomerOverridesCache(cloudCustomers);
+          window.dispatchEvent(new CustomEvent('gojapan_cloud_sync_updated'));
+        });
+
+        unsubAdminTelegram = firestoreSync.subscribeAdminTelegramConfig((cloudTelegram) => {
+          storageService.setTelegramConfigCache(cloudTelegram);
+          window.dispatchEvent(new CustomEvent('gojapan_cloud_sync_updated'));
+        });
+      }
+    });
+
+    return () => {
+      unsubPublicProducts();
+      unsubSiteSettings();
+      unsubPublicAppsScript();
+      cleanupAdminSubs();
+      unsubAuth();
+    };
+  }, []);
 
   // Refresh products & orders & siteSettings from storage
   const handleProductsUpdated = (updated: Product[]) => {
@@ -158,7 +244,7 @@ export default function App() {
         onToggleLanguage={() => setLanguage(language === 'km' ? 'en' : 'km')}
         cartCount={cartCount}
         onOpenCart={() => setIsCartOpen(true)}
-        isAdminLoggedIn={storageService.isAdminLoggedIn()}
+        isAdminLoggedIn={storageService.isAdminLoggedIn() || isCloudAdmin}
         onOpenAppsScriptCode={() => setIsAppsScriptModalOpen(true)}
         siteSettings={siteSettings}
       />
